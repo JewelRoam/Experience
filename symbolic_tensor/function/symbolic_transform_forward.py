@@ -13,6 +13,7 @@ from symbolic_tensor.function.get_input_query_tensor import get_input_query_tens
 from symbolic_tensor.function.select_qkv_indexes import select_qkv_indexes
 from symbolic_tensor.llm_client.agent_task import AgentTask
 from symbolic_tensor.llm_client.coding_agent_task_handler import CodingAgentTaskHandler
+from symbolic_tensor.llm_client.raw_llm_task_handler import RawLlmTaskHandler
 
 
 def _scalar_slice_indices(shape: torch.Size) -> List[List[int]]:
@@ -201,6 +202,8 @@ def symbolic_transform_forward(
 
     if method == "coding_agent":
         CodingAgentTaskHandler()(all_tasks)
+    elif method == "raw_llm_api":
+        RawLlmTaskHandler()(all_tasks)
     else:
         raise ValueError(f"Unknown transform method: {method}")
 
@@ -245,7 +248,7 @@ if __name__ == "__main__":
                 print(f"    expected: {expected}")
                 print(f"    actual:   {actual}")
 
-    print("Test 1: English to French translation")
+    print("Test 1: English to French translation (method=coding_agent)")
     with tempfile.TemporaryDirectory() as tmpdir:
         input_data = ["Hello world in English"]
         input_tensor = make_tensor(input_data, tmpdir)
@@ -262,6 +265,42 @@ if __name__ == "__main__":
             input_tensor, experience_tensor,
             forward_prompt="Translate the English text to French.",
             topk=2,
+            method="coding_agent",
+        )
+
+        run_test("Output shape matches input", list(output.shape) == list(input_tensor.shape))
+        run_test("Selected indexes is a list", isinstance(selected_indexes, list))
+
+        # Read output storage
+        root = os.path.join(tmpdir, output.st_tensor_uid, "storage")
+        for i in range(output.numel()):
+            digits = list(str(i))
+            path = os.path.join(root, os.path.join(*digits), "data")
+            run_test(f"Output file {i} exists", os.path.isfile(path))
+            if os.path.isfile(path):
+                with open(path) as f:
+                    content = f.read()
+                run_test(f"Output {i} not TODO", "TODO" not in content)
+                print(f"  Output {i}: {repr(content)}")
+
+    print("\nTest 2: English to French translation (method=raw_llm_api)")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        input_data = ["Hello world in English"]
+        input_tensor = make_tensor(input_data, tmpdir)
+        print(f"  Input shape: {list(input_tensor.shape)}")
+
+        experience_data = [
+            ["greeting\nhello\nworld", "Hello world in English", "Bonjour le monde en francais"],
+            ["farewell\ngoodbye", "Goodbye in English", "Au revoir en francais"],
+        ]
+        experience_tensor = make_tensor(experience_data, tmpdir)
+        print(f"  Experience shape: {list(experience_tensor.shape)}")
+
+        output, selected_indexes = symbolic_transform_forward(
+            input_tensor, experience_tensor,
+            forward_prompt="Translate the English text to French.",
+            topk=2,
+            method="raw_llm_api",
         )
 
         run_test("Output shape matches input", list(output.shape) == list(input_tensor.shape))

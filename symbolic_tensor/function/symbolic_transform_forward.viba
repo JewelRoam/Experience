@@ -2,7 +2,7 @@
 # Prompt is only for comprehension. do not generate
 Prompt := str
 
-TransformMethod := "coding_agent" # | "raw_llm_api", added later
+TransformMethod := "coding_agent" | "raw_llm_api"
 
 symbolic_transform_forward :=
     ($output Symboilc[torch.Tensor], $selected_experience_qkv_indexes_list NestList[list[torch.Tensor[int]]])
@@ -82,5 +82,12 @@ GenerateOutput["coding_agent"] :=
     # inline
     <- Import[symbolic_tensor/llm_client/coding_agent_task_handler.viba]
 
+GenerateOutput["raw_llm_api"] :=
+    void
+    <- NestList[AgentTask]
+    # inline
+    <- Import[symbolic_tensor/llm_client/raw_llm_task_handler.viba]
+
 # be carefull there claude code instance called in coding_agent_query.
 # make sure env var CLAUDECODE unset.
+# test both coding_agent and raw_llm_api

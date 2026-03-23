@@ -122,16 +122,12 @@ if __name__ == "__main__":
         os.makedirs(os.path.join(tmpdir, "mutable_output"))
         with open(os.path.join(tmpdir, "mutable_output", "data.txt"), "w") as f:
             f.write("TODO")
-        print("before task")
-        print(pack_dir(tmpdir))
         task = AgentTask(
             workspace_dir=tmpdir,
             output_relative_dir="mutable_output",
             prompt="Translate the English text in const_input to French.",
         )
         handler([task])
-        print("after task")
-        print(pack_dir(tmpdir))
 
         with open(os.path.join(tmpdir, "mutable_output", "data.txt"), "r") as f:
             output = f.read()
