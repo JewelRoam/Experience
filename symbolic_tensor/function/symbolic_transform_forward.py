@@ -2,7 +2,9 @@ import os
 import asyncio
 import tempfile
 import itertools
+import shutil
 import torch
+from dataclasses import dataclass
 from typing import Any, List, Tuple, Union
 
 from symbolic_tensor.tensor_util.todo_tensor_like import todo_tensor_like
@@ -12,6 +14,43 @@ from symbolic_tensor.tensor_util.dump_view import dump_view
 from symbolic_tensor.function.get_input_query_tensor import get_input_query_tensor
 from symbolic_tensor.function.select_qkv_indexes import select_qkv_indexes
 from symbolic_tensor.llm_client.coding_agent_query import coding_agent_query
+
+
+@dataclass
+class SymbolicTransformRequest:
+    workspace_dir: str
+    prompt: str
+
+
+def _flatten_nested(nested) -> list:
+    """Flatten a nested list structure into a flat list."""
+    if not isinstance(nested, list):
+        return [nested]
+    result = []
+    for item in nested:
+        result.extend(_flatten_nested(item))
+    return result
+
+
+def _generate_output_coding_agent(all_requests) -> None:
+    """GenerateOutput["coding_agent"]: run coding_agent_query concurrently for all requests."""
+    flat_requests = _flatten_nested(all_requests)
+
+    async def _do_one(request: SymbolicTransformRequest):
+        workspace_dir = request.workspace_dir
+        prompt = request.prompt
+        env_backup = os.environ.pop("CLAUDECODE", None)
+        try:
+            async for _ in coding_agent_query(prompt=prompt, cwd=workspace_dir, allowed_tools=["Read", "Edit", "Write"]):
+                pass
+        finally:
+            if env_backup is not None:
+                os.environ["CLAUDECODE"] = env_backup
+
+    async def _run_all():
+        await asyncio.gather(*[_do_one(req) for req in flat_requests])
+
+    asyncio.run(_run_all())
 
 
 def _scalar_slice_indices(shape: torch.Size) -> List[List[int]]:
@@ -95,6 +134,7 @@ def symbolic_transform_forward(
     experience: torch.Tensor,
     forward_prompt: str = "",
     topk: int = 16,
+    method: str = "coding_agent",
 ) -> Tuple[torch.Tensor, Any]:
     """
     Forward pass of the symbolic transform: translate input to output using
@@ -105,15 +145,17 @@ def symbolic_transform_forward(
       2. Select top-k experience entries by Jaccard similarity
       3. Slice experience to get relevant q/k/v mappings
       4. Dump views of experience, input element, and TODO output element
-      5. Ask LLM to translate input -> output guided by experience
+      5. Build a SymbolicTransformRequest
 
-    All batch elements are processed concurrently via asyncio.gather.
+    Then dispatch all requests to GenerateOutput[method] for batch LLM processing,
+    and copy results back to tensor storage.
 
     Args:
         input: A symbolic tensor to translate.
         experience: An Experience tensor (last dim=3: query, key, value).
         forward_prompt: Optional additional prompt guidance for the LLM.
         topk: Number of top experience entries to use per element.
+        method: Transform method to use (default "coding_agent").
 
     Returns:
         A tuple of:
@@ -128,12 +170,13 @@ def symbolic_transform_forward(
     # Generate input query keywords
     input_query = get_input_query_tensor(input)
 
-    # Iterate over each scalar element
+    # Phase 1: Build requests per scalar element
     coords_list = _scalar_slice_indices(input.size())
     flat_selected_indexes: List[List[torch.Tensor]] = []
+    flat_requests: List[SymbolicTransformRequest] = []
+    flat_copyback_info: List[Tuple[str, torch.Tensor]] = []
 
-    async def _process_element(coords: List[int]):
-        """Process a single scalar element asynchronously."""
+    for coords in coords_list:
         int_slices = [c for c in coords]
 
         # Create scalar views: view (symlink for copy-back) + value (copy for LLM)
@@ -163,47 +206,48 @@ def symbolic_transform_forward(
         # Slice experience to get relevant entries
         experience_sliced_view = slice_view(experience, select_experience_indexes)
 
-        # Create workspace with dump views
-        with tempfile.TemporaryDirectory() as workspace_dir:
-            exp_view_dir = os.path.join(workspace_dir, "const_experiance_view")
-            input_view_dir = os.path.join(workspace_dir, "const_input_view")
-            output_dir = os.path.join(workspace_dir, "mutable_output_dir")
+        # Create workspace and dump views
+        workspace_dir = tempfile.mkdtemp()
+        exp_view_dir = os.path.join(workspace_dir, "const_experiance_view")
+        input_view_dir = os.path.join(workspace_dir, "const_input_view")
+        output_dir = os.path.join(workspace_dir, "mutable_output_dir")
 
-            dump_view(experience_sliced_view, exp_view_dir, "txt")
-            dump_view(scalar_input_view, input_view_dir, "txt")
-            # Dump the copy (not the view) — LLM writes here freely
-            dump_view(scalar_output_value, output_dir, "txt")
+        dump_view(experience_sliced_view, exp_view_dir, "txt")
+        dump_view(scalar_input_view, input_view_dir, "txt")
+        # Dump the copy (not the view) — LLM writes here freely
+        dump_view(scalar_output_value, output_dir, "txt")
 
-            prompt = (
-                "You are a semantic translator.\n\n"
-                f"{forward_prompt}\n\n"
-                "Experience mappings are defined as:\n"
-                f"  1) file \"<root_dir>/<experience_coordinate>.../0/data.xxx\" means query file of <experience_coordinate>...\n"
-                f"  2) file \"<root_dir>/<experience_coordinate>.../1/data.xxx\" means key file of <experience_coordinate>...\n"
-                f"  3) file \"<root_dir>/<experience_coordinate>.../2/data.xxx\" means value file of <experience_coordinate>...\n\n"
-                "You need read all the key => value pairs to get the experiences.\n\n"
-                f"Conducted by \"{exp_view_dir}\",\n"
-                f"please translate source semantic text \"{input_view_dir}\"\n"
-                f"to target semantic text \"{output_dir}\".\n\n"
-                f"Replace TODO in \"{output_dir}\" with target semantic text.\n"
-            )
+        prompt = (
+            "You are a semantic translator.\n\n"
+            f"{forward_prompt}\n\n"
+            "Experience mappings are defined as:\n"
+            f"  1) file \"<root_dir>/<experience_coordinate>.../0/data.xxx\" means query file of <experience_coordinate>...\n"
+            f"  2) file \"<root_dir>/<experience_coordinate>.../1/data.xxx\" means key file of <experience_coordinate>...\n"
+            f"  3) file \"<root_dir>/<experience_coordinate>.../2/data.xxx\" means value file of <experience_coordinate>...\n\n"
+            "You need read all the key => value pairs to get the experiences.\n\n"
+            f"Conducted by \"{exp_view_dir}\",\n"
+            f"please translate source semantic text \"{input_view_dir}\"\n"
+            f"to target semantic text \"{output_dir}\".\n\n"
+            f"Replace TODO in \"{output_dir}\" with target semantic text.\n"
+        )
 
-            # Ensure CLAUDECODE env var is unset
-            env_backup = os.environ.pop("CLAUDECODE", None)
-            try:
-                async for _ in coding_agent_query(prompt=prompt, cwd=workspace_dir, allowed_tools=["Read", "Edit", "Write"]):
-                    pass
-            finally:
-                if env_backup is not None:
-                    os.environ["CLAUDECODE"] = env_backup
+        flat_requests.append(SymbolicTransformRequest(workspace_dir=workspace_dir, prompt=prompt))
+        flat_copyback_info.append((output_dir, scalar_output_view))
 
-            # Copy results back from mutable dir through view symlinks to parent storage
-            _copy_back_to_storage_view(output_dir, scalar_output_view)
+    # Phase 2: Dispatch to GenerateOutput[method]
+    all_transform_requests = _build_nested_result(flat_requests, list(input.size()))
 
-    async def _run_all():
-        await asyncio.gather(*[_process_element(coords) for coords in coords_list])
+    if method == "coding_agent":
+        _generate_output_coding_agent(all_transform_requests)
+    else:
+        raise ValueError(f"Unknown transform method: {method}")
 
-    asyncio.run(_run_all())
+    # Phase 3: Copy back results and cleanup
+    for output_dir, scalar_output_view in flat_copyback_info:
+        _copy_back_to_storage_view(output_dir, scalar_output_view)
+
+    for req in flat_requests:
+        shutil.rmtree(req.workspace_dir, ignore_errors=True)
 
     # Build nested structure matching input shape
     selected_experience_qkv_indexes_list = _build_nested_result(

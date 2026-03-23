@@ -2,12 +2,15 @@
 # Prompt is only for comprehension. do not generate
 Prompt := str
 
+TransformMethod := "coding_agent" # | "raw_llm_api", added later
+
 symbolic_transform_forward :=
     ($output Symboilc[torch.Tensor], $selected_experience_qkv_indexes_list NestList[list[torch.Tensor[int]]])
     <- $input Symboilc[torch.Tensor]
     <- $experience Experience[Symbolic[torch.Tensor]]
     <- $forward_prompt Prompt # default ""
     <- $topk int # default 16
+    <- $method TransformMethod # default coding_agent
     # inline
     <- ($output
         <- Import[symbolic_tensor/tensor_util/todo_tensor_like.viba]
@@ -64,12 +67,26 @@ symbolic_transform_forward :=
 
         replace TODO in f"{workspace_dir}/mutable_output_dir" with target semantic text
     ''')
-    <- $llm_query Import[symbolic_tensor/llm_client/coding_agent_query.py].coding_agent_query
-    <- $async_do_for_one_batch (void <- $llm_query <- $prompt <- $workspace_dir)
-    <- (void <- async_gather_run <- NestList[$async_do_for_one_batch])
+    <- ($transform_request SymbolicTransformRequest <- $workspace_dir <- $prompt)
+    <- ($all_transform_request <- NestList[$transform_request])
+    <- (void <- GenerateOutput[$method] <- $all_transform_request)
     # copy back: LLM Write tool replaces symlinks with regular files,
     # so read from view files and write back to tensor storage.
     <- (void <- copy_back_to_storage_view <- f"{workspace_dir}/mutable_output_dir" <- $scalar_output_view)
+
+SymbolicTransformRequest :=
+    Object
+    * $workspace_dir str
+    * $prompt str
+
+GenerateOutput["coding_agent"] :=
+    void
+    <- NestList[$request SymbolicTransformRequest]
+    # inline
+    <- (($workspace_dir, $prompt) <- $request)
+    <- $llm_query Import[symbolic_tensor/llm_client/coding_agent_query.py].coding_agent_query
+    <- $async_do_for_one_batch (void <- $llm_query <- $prompt <- $workspace_dir)
+    <- (void <- async_gather_run <- NestList[$async_do_for_one_batch])
 
 # be carefull there claude code instance called in coding_agent_query.
 # make sure env var CLAUDECODE unset.
