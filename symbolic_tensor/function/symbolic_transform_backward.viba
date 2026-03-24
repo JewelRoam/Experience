@@ -121,7 +121,7 @@ symbolic_transform_backward_grad_experience :=
     <- $llm_method ("coding_agent" | "raw_llm_api") # default raw_llm_api
     # inline
     <- ($padded_select_indexes list[torch.Tensor[int]]
-        <- pad_indexes_to_topk_with_none_experience_indexes # only add queries, i.e. last dim == 0
+        <- pad_random_indexes_to_topk_with_none_experience_indexes # only add queries, i.e. last dim == 0
         <- $select_experience_query_indexes
         <- $topk
         <- $experience)
@@ -206,6 +206,10 @@ symbolic_transform_backward_grad_experience :=
         1. Gradient files must be like output of `diff -u --label data --label data original.txt modified.txt`.
         2. Gradient files will be applied by cmd `patch -i backward.diff /forward/location/data`
         3. Gradient files of f"{workspace_dir}/mutable_grad_experience_dir/<xxx>/data" must be able to be applied to f"{workspace_dir}/const_experience_view/<xxx>/data"
+
+        NOTICE: All files MUST end with a newline. NEVER include '\ No newline at end of file' in diff output.
+        NOTICE: All files MUST end with a newline. NEVER include '\ No newline at end of file' in diff output.
+        NOTICE: All files MUST end with a newline. NEVER include '\ No newline at end of file' in diff output.
     ''')
     <- ($agent_task AgentTask <- $workspace_dir <- "mutable_grad_experience_dir" <- $prompt)
     <- ($all_tasks <- list[$agent_task])

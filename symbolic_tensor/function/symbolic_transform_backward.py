@@ -72,6 +72,38 @@ def _pad_indexes_to_topk_with_none_experience_indexes(
     return padded
 
 
+def _pad_random_indexes_to_topk_with_none_experience_indexes(
+    select_experience_query_indexes: List[torch.Tensor],
+    topk: int,
+    experience: torch.Tensor,
+) -> List[torch.Tensor]:
+    """Pad index tensors to topk with random experience indexes (last dim always 0 for query)."""
+    ndim = len(experience.size())
+
+    if not select_experience_query_indexes:
+        result = []
+        for d in range(ndim):
+            if d == ndim - 1:
+                result.append(torch.zeros(topk, dtype=torch.long))
+            else:
+                result.append(torch.randint(0, experience.size(d), (topk,)))
+        return result
+
+    current_len = len(select_experience_query_indexes[0])
+    if current_len >= topk:
+        return select_experience_query_indexes
+
+    pad_count = topk - current_len
+    padded = []
+    for d, idx_tensor in enumerate(select_experience_query_indexes):
+        if d == ndim - 1:
+            pad_tensor = torch.zeros(pad_count, dtype=idx_tensor.dtype)
+        else:
+            pad_tensor = torch.randint(0, experience.size(d), (pad_count,), dtype=idx_tensor.dtype)
+        padded.append(torch.cat([idx_tensor, pad_tensor]))
+    return padded
+
+
 def _build_nested_result(flat_results: List[Any], shape: List[int]) -> Any:
     """Reshape a flat list of results into a nested list matching the given shape."""
     if not shape:
@@ -238,15 +270,15 @@ def symbolic_transform_backward_grad_experience(
     to invert the forward's index mapping: for each experience entry, gather all input elements
     that used it and present them together to the LLM.
     """
-    # Pad each leaf's indexes to topk before transposing.
-    # When experience is empty and forward selects nothing, padding fills with
-    # index 0 so gradient still flows to experience entries.
+    # Pad each leaf's indexes to topk with random experience indexes before transposing.
+    # When experience is empty and forward selects nothing, random padding ensures
+    # gradient flows to different experience entries, not just entry 0.
     input_shape = list(input.size())
     flat_indexes = _flatten_nested_indexes(
         selected_experience_qkv_indexes_list, input_shape
     )
     padded_flat = [
-        _pad_indexes_to_topk_with_none_experience_indexes(idx, topk, experience)
+        _pad_random_indexes_to_topk_with_none_experience_indexes(idx, topk, experience)
         for idx in flat_indexes
     ]
     padded_nested = _build_nested_result(padded_flat, input_shape)
@@ -320,7 +352,10 @@ def symbolic_transform_backward_grad_experience(
             "Gradient files format:\n"
             "1. Gradient files must be like output of `diff -u --label data --label data original.txt modified.txt`.\n"
             "2. Gradient files will be applied by cmd `patch -i backward.diff /forward/location/data`\n"
-            f"3. Gradient files of \"{grad_experience_dir}/<xxx>/data\" must be able to be applied to \"{experience_view_dir}/<xxx>/data\"\n"
+            f"3. Gradient files of \"{grad_experience_dir}/<xxx>/data\" must be able to be applied to \"{experience_view_dir}/<xxx>/data\"\n\n"
+            "NOTICE: All files MUST end with a newline. NEVER include '\\ No newline at end of file' in diff output.\n"
+            "NOTICE: All files MUST end with a newline. NEVER include '\\ No newline at end of file' in diff output.\n"
+            "NOTICE: All files MUST end with a newline. NEVER include '\\ No newline at end of file' in diff output.\n"
         )
 
         agent_task = AgentTask(
