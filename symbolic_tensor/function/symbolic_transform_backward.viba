@@ -109,8 +109,10 @@ symbolic_transform_backward :=
         Replace all TODO with computed Gradient files.
 
         Gradient files format:
-        1. Gradient files should be like output of `diff -u --label data --label data original.txt modified.txt`.
+        1. Gradient files must be like output of `diff -u --label data --label data original.txt modified.txt`.
         2. Gradient files will be applied by cmd `patch -i backward.diff /forward/location/data`
+        3. Gradient files of f"{workspace_dir}/mutable_grad_input_dir/<xxx>/data" must be able to be applied to f"{workspace_dir}/const_input_view/<xxx>/data"
+        4. Gradient files of f"{workspace_dir}/mutable_grad_experience_dir/<xxx>/data" must be able to be applied to f"{workspace_dir}/const_experience_view/<xxx>/data"
     ''')
     <- ($agent_task AgentTask <- $workspace_dir <- ["mutable_grad_input_dir", "mutable_grad_experience_dir"] <- $prompt)
     <- ($all_tasks <- NestList[$agent_task])

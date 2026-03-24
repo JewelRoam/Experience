@@ -227,8 +227,10 @@ def symbolic_transform_backward(
                 "   mutable_grad_experience_dir in previous iteration. You should merge them.\n\n"
                 "Replace all TODO with computed Gradient files.\n\n"
                 "Gradient files format:\n"
-                "1. Gradient files should be like output of `diff -u --label data --label data original.txt modified.txt`.\n"
+                "1. Gradient files must be like output of `diff -u --label data --label data original.txt modified.txt`.\n"
                 "2. Gradient files will be applied by cmd `patch -i backward.diff /forward/location/data`\n"
+                f"3. Gradient files of \"{grad_input_dir}/<xxx>/data\" must be able to be applied to \"{input_view_dir}/<xxx>/data\"\n"
+                f"4. Gradient files of \"{grad_experience_dir}/<xxx>/data\" must be able to be applied to \"{experience_view_dir}/<xxx>/data\"\n"
             )
 
             prompt = (
