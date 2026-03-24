@@ -1,0 +1,7 @@
+convert_nested_list_coordinates_to_pairs_coordinates :=
+    list[($key list[$sole_value torch.Tensor[Index]], $value list[torch.Tensor[Index]])]
+    <- NestedList[$value list[torch.Tensor[Index]]]
+    # inline
+    <- ($key_coordinates list[$coordinate_scalar int] <- get_coordinates_cur_value <- IterateOn[NestedList] <- $value)
+    <- ($coordinate_sole_value_tensor torch.Tensor[Index] <- $coordinate_scalar)
+    <- ($key <- list[$coordinate_sole_value_tensor])

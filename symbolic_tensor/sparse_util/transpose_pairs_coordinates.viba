@@ -1,0 +1,34 @@
+transpose_pairs_coordinates :=
+    $ret list[($output_value list[$sole_value torch.Tensor[Index]], $output_key list[torch.Tensor[Index]])]
+    <- list[($input_key list[$sole_value torch.Tensor[Index]], $input_value list[torch.Tensor[Index]])]
+    # inline
+    <- ($list_of_tuple_input_value list[tuple[int, ...]]
+        <- zip
+        <- tuple[list[int], ...]
+        <- tensor_to_list
+        <- tuple[Tensor, ...]
+        <- list_to_tuple
+        <- $input_value)
+    <- ($list_of_tuple_input_key list[tuple[int, ...]]
+        <- (replicate_to_length_of <- $list_of_tuple_input_value)
+        <- list[tuple[int, ...]]
+        <- zip
+        <- tuple[list[int], ...]
+        <- tensor_to_list
+        <- tuple[Tensor, ...]
+        <- list_to_tuple
+        <- $input_key)
+    <- ($inner_pairs list[(tuple[int, ...], tuple[int, ...])]
+        zip
+        <- $list_of_tuple_input_key
+        <- $list_of_tuple_input_value)
+    <- ($pairs list[(tuple[int, ...], tuple[int, ...])]
+        <- flat_map
+        <- list[$inner_pairs list[(tuple[int, ...], tuple[int, ...])]])
+    <- ($ret
+        <- Map[list_coordinates_to_tuple_tensors]
+        <- list[sole_elem_list[$sole_output_key], $output_value]
+        <- dict[$sole_output_key tuple[int, ...], $output_value list[tuple[int, ...]]]
+        <- select_first_for_each_group
+        <- group_by_second
+        <- $pairs)

@@ -18,14 +18,29 @@ symbolic_transform_backward :=
     <- $forward_prompt Prompt # default ""
     <- $topk int # default 16
     <- $llm_method ("coding_agent" | "raw_llm_api") # default raw_llm_api
+    <- ($graph_input <- symbolic_transform_backward_grad_input <- ... <- If[$input.requires_grad] <- Else[None])
+    <- symbolic_transform_backward_grad_experience
+
+symbolic_transform_backward_grad_input :=
+    ($grad_input Symbolic[torch.Tensor], $grad_experience Experience[Symbolic[torch.Tensor]])
+    <- $grad_output Symbolic[torch.Tensor]
+    # saved from forward ctx
+    <- $input Symbolic[torch.Tensor]
+    <- $output Symbolic[torch.Tensor]
+    <- $experience Experience[Symbolic[torch.Tensor]]
+    <- $selected_experience_qkv_indexes_list NestList[list[torch.Tensor[int]]]
+    <- $forward_prompt Prompt # default ""
+    <- $topk int # default 16
+    <- $llm_method ("coding_agent" | "raw_llm_api") # default raw_llm_api
     # inline
+    <- Notice[HasSameShape[NestList[int], $input]]
     <- ($grad_input
         <- Import[symbolic_tensor/tensor_util/todo_tensor_like.viba]
         <- $input
         <- If[$input.requires_grad]
         <- Else[None])
     <- ($grad_experience
-        <- Import[symbolic_tensor/tensor_util/todo_tensor_like.viba]
+        <- Import[symbolic_tensor/tensor_util/empty_tensor_like.viba]
         <- $experience)
     <- $slice_view Import[symbolic_tensor/tensor_util/slice_view.viba]
     <- $slice_tensor Import[symbolic_tensor/tensor_util/slice_tensor.viba]
@@ -47,8 +62,118 @@ symbolic_transform_backward :=
         <- $topk
         <- $experience)
     <- ($select_experience_indexes <- replace_last_tensor_with_full_slice <- $padded_select_indexes)
-    # scatter-add: grad_experience.data[select_experience_indexes] += scalar_grad_output_coeff
-    <- (void <- scatter_add_coeff <- $grad_experience.data <- $select_experience_indexes <- $scalar_grad_output_coeff)
+
+    # ── Symbolic channel (text diff) ──
+    # per scalar element: slice all relevant tensors
+    <- (NestList[$scalar_grad_output Symbolic[torch.Tensor]] <- NestList[$slice_view] <- $grad_output)
+    <- (NestList[$scalar_input Symbolic[torch.Tensor]] <- NestList[$slice_view] <- $input)
+    <- (NestList[$scalar_output Symbolic[torch.Tensor]] <- NestList[$slice_view] <- $output)
+    <- (NestList[$scalar_grad_input_view Symbolic[torch.Tensor]] <- NestList[$slice_view] <- $grad_input <- If[$input.requires_grad])
+    <- (NestList[$scalar_grad_input_value Symbolic[torch.Tensor]] <- NestList[$slice_tensor] <- $grad_input <- If[$input.requires_grad])
+    # slice experience (const) and grad_experience (mutable) with same padded indexes
+    <- ($experience_sliced_view Experience[Symbolic[torch.Tensor]]
+        <- $slice_view
+        <- $experience
+        <- $select_experience_indexes)
+    <- ($grad_experience_sliced_view Experience[Symbolic[torch.Tensor]]
+        <- $slice_view
+        <- $grad_experience
+        <- $select_experience_indexes)
+    <- ($grad_experience_sliced_value Experience[Symbolic[torch.Tensor]]
+        <- $slice_tensor
+        <- $grad_experience
+        <- $select_experience_indexes)
+    <- ($workspace_dir <- TemporaryDirectory)
+    # dump const views (read-only context for LLM)
+    <- (void <- $dump_view <- $scalar_grad_output <- f"{workspace_dir}/const_grad_output_view")
+    <- (void <- $dump_view <- $scalar_input <- f"{workspace_dir}/const_input_view")
+    <- (void <- $dump_view <- $scalar_output <- f"{workspace_dir}/const_output_view")
+    <- (void <- $dump_view <- $experience_sliced_view <- f"{workspace_dir}/const_experience_view")
+    # dump mutable views (LLM writes gradients here)
+    <- (void <- $dump_view <- $scalar_grad_input_value <- f"{workspace_dir}/mutable_grad_input_dir" <- If[$input.requires_grad])
+    <- (void <- $dump_view <- $grad_experience_sliced_value <- f"{workspace_dir}/mutable_grad_experience_dir")
+    <- ($prompt <- '''
+        You are a symbolic gradient calculator for backward pass.
+
+        f"{forward_prompt}"
+
+        During forward pass, the input was translated to output using experience entries.
+        Now given the output gradient (how output should change), compute gradients for
+        input and experience.
+
+        Context (read-only):
+        - Output gradient (text diff): f"{workspace_dir}/const_grad_output_view"
+        - Original input: f"{workspace_dir}/const_input_view"
+        - Original output: f"{workspace_dir}/const_output_view"
+        - Experience entries used during forward: f"{workspace_dir}/const_experience_view"
+          where .../0/data.xxx = query, .../1/data.xxx = key, .../2/data.xxx = value
+        - Each line in query files only contains one summary key word for current experience.
+          which used for calculate similarity between inputs and experience.
+        - Key files contain source domain semantics.
+        - Value files contain target domain semantics.
+
+        Compute and write:
+        1. Input gradient in f"{workspace_dir}/mutable_grad_input_dir":
+           How should the input text change to improve the output?
+        2. Experience gradients in f"{workspace_dir}/mutable_grad_experience_dir":
+           How should each experience entry (query, key, value) change to improve the output?
+           Notice, it's possible that there are existed Experience gradients accumulated in mutable_grad_experience_dir in previous iteration. You should merge them.
+
+        Replace all TODO with computed Gradient files.
+
+        Gradient files format:
+        1. Gradient files must be like output of `diff -u --label data --label data original.txt modified.txt`.
+        2. Gradient files will be applied by cmd `patch -i backward.diff /forward/location/data`
+        3. Gradient files of f"{workspace_dir}/mutable_grad_input_dir/<xxx>/data" must be able to be applied to f"{workspace_dir}/const_input_view/<xxx>/data"
+    ''')
+    <- ($agent_task AgentTask <- $workspace_dir <- "mutable_grad_input_dir" <- $prompt)
+    <- ($all_tasks <- NestList[$agent_task])
+    <- (void <- Import[symbolic_tensor/llm_client/task_handler.viba] <- $all_tasks <- $llm_method)
+    # copy back using pre-resolved paths (bypasses broken symlinks)
+    <- (void <- copy_back_to_storage_view <- f"{workspace_dir}/mutable_grad_input_dir" <- $scalar_grad_input_view <- If[$input.requires_grad])
+
+
+symbolic_transform_backward_grad_experience :=
+    ($grad_input Symbolic[torch.Tensor], $grad_experience Experience[Symbolic[torch.Tensor]])
+    <- $grad_output Symbolic[torch.Tensor]
+    # saved from forward ctx
+    <- $input Symbolic[torch.Tensor]
+    <- $output Symbolic[torch.Tensor]
+    <- $experience Experience[Symbolic[torch.Tensor]]
+    <- $selected_experience_qkv_indexes_list NestList[list[torch.Tensor[int]]]
+    <- $forward_prompt Prompt # default ""
+    <- $topk int # default 16
+    <- $llm_method ("coding_agent" | "raw_llm_api") # default raw_llm_api
+    # inline
+    <- Notice[HasSameShape[NestList[int], $input]]
+    <- ($grad_input
+        <- Import[symbolic_tensor/tensor_util/todo_tensor_like.viba]
+        <- $input
+        <- If[$input.requires_grad]
+        <- Else[None])
+    <- ($grad_experience
+        <- Import[symbolic_tensor/tensor_util/empty_tensor_like.viba]
+        <- $experience)
+    <- $slice_view Import[symbolic_tensor/tensor_util/slice_view.viba]
+    <- $slice_tensor Import[symbolic_tensor/tensor_util/slice_tensor.viba]
+    <- $dump_view Import[symbolic_tensor/tensor_util/dump_view.viba]
+
+    # ── Numeric channel (coefficient) ──
+    # grad_input coefficient: pass-through copy from grad_output
+    <- ($grad_input.data <- $grad_output.data <- If[$input.requires_grad])
+    # grad_experience coefficient: accumulate from grad_output for each used experience
+    # for each scalar element, scatter-add its grad_output coefficient
+    # to the selected experience entries via padded_select_indexes
+    <- ($grad_experience.data <- zeros_like <- $experience.data)
+    <- (NestList[$scalar_grad_output_coeff float <- $grad_output.data])
+    <- (NestList[$select_experience_query_indexes list[torch.Tensor[int]]]
+        <- $selected_experience_qkv_indexes_list)
+    <- ($padded_select_indexes list[torch.Tensor[int]]
+        <- pad_indexes_to_topk_with_none_experience_indexes
+        <- $select_experience_query_indexes
+        <- $topk
+        <- $experience)
+    <- ($select_experience_indexes <- replace_last_tensor_with_full_slice <- $padded_select_indexes)
 
     # ── Symbolic channel (text diff) ──
     # per scalar element: slice all relevant tensors
@@ -120,6 +245,8 @@ symbolic_transform_backward :=
     # copy back using pre-resolved paths (bypasses broken symlinks)
     <- (void <- copy_back_to_storage_view <- f"{workspace_dir}/mutable_grad_input_dir" <- $scalar_grad_input_view <- If[$input.requires_grad])
     <- (void <- copy_back_to_storage_view <- <- f"{workspace_dir}/mutable_grad_experience_dir" <- $grad_experience_sliced_view)
+
+
 
 AgentTask := Import[symbolic_tensor/llm_client/agent_task.viba]
 
