@@ -72,6 +72,21 @@ def _pad_indexes_to_topk_with_none_experience_indexes(
     return padded
 
 
+def _build_nested_result(flat_results: List[Any], shape: List[int]) -> Any:
+    """Reshape a flat list of results into a nested list matching the given shape."""
+    if not shape:
+        return flat_results[0]
+    if len(shape) == 1:
+        return flat_results
+    chunk_size = 1
+    for s in shape[1:]:
+        chunk_size *= s
+    return [
+        _build_nested_result(flat_results[i * chunk_size:(i + 1) * chunk_size], shape[1:])
+        for i in range(shape[0])
+    ]
+
+
 def _copy_back_to_storage_view(mutable_dir: str, view_tensor: torch.Tensor) -> None:
     """Copy LLM results from mutable workspace dir back through view tensor's symlinks."""
     coords_list = [list(coord) for coord in itertools.product(*[range(s) for s in view_tensor.size()])]
@@ -223,10 +238,21 @@ def symbolic_transform_backward_grad_experience(
     to invert the forward's index mapping: for each experience entry, gather all input elements
     that used it and present them together to the LLM.
     """
-    # Convert nested selected indexes to pairs, then transpose
-    pairs = convert_nested_list_coordinates_to_pairs_coordinates(
-        selected_experience_qkv_indexes_list
+    # Pad each leaf's indexes to topk before transposing.
+    # When experience is empty and forward selects nothing, padding fills with
+    # index 0 so gradient still flows to experience entries.
+    input_shape = list(input.size())
+    flat_indexes = _flatten_nested_indexes(
+        selected_experience_qkv_indexes_list, input_shape
     )
+    padded_flat = [
+        _pad_indexes_to_topk_with_none_experience_indexes(idx, topk, experience)
+        for idx in flat_indexes
+    ]
+    padded_nested = _build_nested_result(padded_flat, input_shape)
+
+    # Convert padded indexes to pairs, then transpose
+    pairs = convert_nested_list_coordinates_to_pairs_coordinates(padded_nested)
     transposed = transpose_pairs_coordinates(pairs)
 
     # Create grad_experience with empty strings (unselected entries stay "")

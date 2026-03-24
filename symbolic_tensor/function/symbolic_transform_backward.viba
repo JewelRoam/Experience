@@ -115,11 +115,17 @@ symbolic_transform_backward_grad_experience :=
     <- $input Symbolic[torch.Tensor]
     <- $output Symbolic[torch.Tensor]
     <- $experience Experience[Symbolic[torch.Tensor]]
-    <- $selected_experience_qkv_indexes_list NestedList[list[torch.Tensor[int]]]
+    <- NestedList[select_experience_query_indexes list[torch.Tensor[int]]]
     <- $forward_prompt Prompt # default ""
     <- $topk int # default 16
     <- $llm_method ("coding_agent" | "raw_llm_api") # default raw_llm_api
     # inline
+    <- ($padded_select_indexes list[torch.Tensor[int]]
+        <- pad_indexes_to_topk_with_none_experience_indexes # only add queries, i.e. last dim == 0
+        <- $select_experience_query_indexes
+        <- $topk
+        <- $experience)
+    <- ($selected_experience_qkv_indexes_list <- NestedList[$padded_select_indexes])
     <- (list[$sole_grad_experience_point list[torch.Tensor[Index]],
              $multi_grad_output_points list[torch.Tensor[Index]]]
         <- Import[symbolic_tensor/sparse_util/transpose_pairs_coordinates.viba]
