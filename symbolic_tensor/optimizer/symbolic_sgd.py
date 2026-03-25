@@ -220,17 +220,29 @@ class SymbolicSGD(torch.optim.Optimizer):
         return loss
 
     def _update_queries(self, param: torch.Tensor, unique_row_points: List[torch.Tensor]) -> None:
-        """After patching key+value, auto-derive query content from updated key+value text."""
+        """After patching key+value, auto-derive query content from updated key+value text.
+
+        Flow per viba:
+        1. Run get_input_query_tensor on kv_param → LLM generates keywords per element
+        2. Read keyword files for each (key, value) pair
+        3. Merge, sort, unique, join with newline
+        4. Write to query file
+        """
         if not hasattr(param, "st_tensor_uid"):
             return
+
+        from symbolic_tensor.function.get_input_query_tensor import get_input_query_tensor
 
         # kv_points: key(1) + value(2) dims
         kv_points = list(unique_row_points) + [slice(1, 3, None)]
         kv_param = slice_view(param, kv_points)
 
-        # Get file paths for the kv slice
-        kv_file_paths = get_nested_list_file_pathes(kv_param)
-        flat_kv_paths = _flatten_nested_paths(kv_file_paths)
+        # Step 1: Run get_input_query_tensor on kv_param to generate LLM keywords
+        kv_queries = get_input_query_tensor(kv_param, llm_method="raw_llm_api")
+
+        # Step 2: Get file paths from kv_queries (LLM-generated keywords)
+        kv_query_file_paths = get_nested_list_file_pathes(kv_queries)
+        flat_kv_query_paths = _flatten_nested_paths(kv_query_file_paths)
 
         # query_points: query(0) dim
         query_points = list(unique_row_points) + [slice(0, 1, None)]
@@ -239,19 +251,18 @@ class SymbolicSGD(torch.optim.Optimizer):
         query_file_paths = get_nested_list_file_pathes(query_view)
         flat_query_paths = _flatten_nested_paths(query_file_paths)
 
-        # For each experience entry, pair up key+value paths and derive query
-        # kv_param shape: [N, 2] where dim 1 = (key, value)
-        # query_view shape: [N, 1] where dim 1 = (query,)
+        # Step 3-4: For each experience entry, read keyword files for key+value,
+        # merge, sort, unique, write to query file
         n_entries = len(flat_query_paths)
         for i in range(n_entries):
-            # Each entry has 2 kv files: key at 2*i, value at 2*i+1
-            key_path = flat_kv_paths[2 * i] if 2 * i < len(flat_kv_paths) else None
-            value_path = flat_kv_paths[2 * i + 1] if 2 * i + 1 < len(flat_kv_paths) else None
+            # Each entry has 2 kv keyword files: from_key at 2*i, from_value at 2*i+1
+            key_query_path = flat_kv_query_paths[2 * i] if 2 * i < len(flat_kv_query_paths) else None
+            value_query_path = flat_kv_query_paths[2 * i + 1] if 2 * i + 1 < len(flat_kv_query_paths) else None
             query_path = flat_query_paths[i]
 
-            # Read key and value text, collect all lines
+            # Read LLM-generated keywords from both key and value query files
             all_lines = []
-            for p in [key_path, value_path]:
+            for p in [key_query_path, value_query_path]:
                 if p is not None and p.exists():
                     text = p.read_text(encoding="utf-8").strip()
                     if text:
@@ -283,9 +294,21 @@ class SymbolicSGD(torch.optim.Optimizer):
 
 
 if __name__ == "__main__":
+    import subprocess
     import tempfile
     from symbolic_tensor.tensor_util.make_tensor import make_tensor
     from symbolic_tensor.tensor_util.todo_tensor_like import todo_tensor_like
+
+    # Source anthropic env vars
+    result = subprocess.run(
+        ["bash", "-c", "source ~/.anthropic.sh && env"],
+        capture_output=True, text=True,
+    )
+    for line in result.stdout.splitlines():
+        if "=" in line:
+            key, _, val = line.partition("=")
+            os.environ[key] = val
+    os.environ.pop("CLAUDECODE", None)
 
     print("Running SymbolicSGD tests...\n")
 

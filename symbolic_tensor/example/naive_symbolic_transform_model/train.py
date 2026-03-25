@@ -88,7 +88,7 @@ def main():
         # Experience: [query_keywords, key_python, value_viba] per entry
         experience_entries = []
         for i, (py_name, viba_name) in enumerate(pairs):
-            experience_entries.append(["", "", ""])
+            experience_entries.append([""] * 3)
 
         experience_tensor = make_tensor(experience_entries, tmpdir)
 
@@ -208,6 +208,7 @@ def main():
 
         with open(LOSS_LOG, "w") as f:
             for i, loss_val in enumerate(losses, 1):
+                print(f"iteration {i}: {loss_val:.6f}\n")
                 f.write(f"iteration {i}: {loss_val:.6f}\n")
             f.write(f"\nConverged: {losses[-1] < losses[0] if len(losses) > 1 else 'N/A'}\n")
 
