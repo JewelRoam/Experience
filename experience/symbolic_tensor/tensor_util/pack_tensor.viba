@@ -1,0 +1,6 @@
+pack_tensor :=
+    str
+    <- $tensor Symbolic[torch.Tensor]
+    # inline
+    <- $tensor_dir f"{tensor.st_relative_to}/{tensor.st_tensor_uid}"
+    <- Import[experience/symbolic_tensor/llm_client/pack_dir.viba]

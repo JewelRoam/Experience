@@ -1,5 +1,0 @@
-
-Import[symbolic_tensor/function/symbolic_transform_forward.viba]
-
-# in __main__ block:
-#   compare time consumption between two transform method. the only difference is transform_method

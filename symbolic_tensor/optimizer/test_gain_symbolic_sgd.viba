@@ -1,6 +1,0 @@
-
-Import[symbolic_tensor/optimizer/symbolic_sgd.viba]
-
-# in __main__ block:
-# one hard test for forward -> backward -> optimizer -> forward(with better output)
-# test-multi batch

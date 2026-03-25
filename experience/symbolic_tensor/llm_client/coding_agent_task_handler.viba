@@ -1,0 +1,12 @@
+
+CodingAgentTaskHandler :=
+    # __call__
+    void
+    <- NestedList[$agent_task Import[experience/symbolic_tensor/llm_client/agent_task.viba]]
+    # __init__
+    <- ()
+    # inline
+    <- (($workspace_dir, $prompt) <- $agent_task)
+    <- $llm_query Import[experience/symbolic_tensor/llm_client/coding_agent_query.py].coding_agent_query
+    <- $async_do_for_one_batch (void <- $llm_query <- $prompt <- $workspace_dir)
+    <- (void <- async_gather_run <- NestList[$async_do_for_one_batch])

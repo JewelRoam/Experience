@@ -14,7 +14,7 @@ Symbolic Tensor:    ["hello world", "bonjour"]   -> text files + coefficients
 ## Architecture
 
 ```
-symbolic_tensor/
+experience/symbolic_tensor/
 ├── tensor_util/         # Low-level tensor primitives
 │   ├── make_tensor          # Create symbolic tensor from nested strings/Paths
 │   ├── make_none_tensor     # Create zero-filled symbolic tensor (placeholder)
@@ -155,10 +155,10 @@ This example trains a model from scratch to translate Python code into Viba. The
 import tempfile
 from pathlib import Path
 
-from symbolic_tensor.tensor_util.make_tensor import make_tensor
-from symbolic_tensor.function.get_edit_distance_ratio import get_edit_distance_ratio
-from symbolic_tensor.optimizer.symbolic_sgd import SymbolicSGD
-from symbolic_tensor.example.naive_symbolic_transform_model.model import NaiveModel
+from experience.symbolic_tensor.tensor_util.make_tensor import make_tensor
+from experience.symbolic_tensor.function.get_edit_distance_ratio import get_edit_distance_ratio
+from experience.symbolic_tensor.optimizer.symbolic_sgd import SymbolicSGD
+from experience.symbolic_tensor.example.naive_symbolic_transform_model.model import NaiveModel
 
 DATASET_PAIRS = [
     "seq", "branch", "loop",
@@ -214,7 +214,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
 
 ```bash
 # Requires ANTHROPIC_API_KEY or LLM_API_KEY/LLM_BASE_URL/LLM_MODEL env vars
-python -m symbolic_tensor.example.naive_symbolic_transform_model.train
+python -m experience.symbolic_tensor.example.naive_symbolic_transform_model.train
 ```
 
 Output:
@@ -335,7 +335,7 @@ pip install torch claude-agent-sdk openai Levenshtein
 ## Quick Start
 
 ```python
-from symbolic_tensor import tensor, none
+from experience.symbolic_tensor import tensor, none
 
 # Create a symbolic tensor
 t = tensor(["hello world", "bonjour le monde"], "/tmp/my_tensors")

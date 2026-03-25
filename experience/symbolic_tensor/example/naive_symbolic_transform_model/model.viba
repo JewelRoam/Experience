@@ -1,0 +1,10 @@
+NaiveModel := torch.nn.Module
+
+__init__ :=
+    void
+    <- $self NaiveModel
+    <- ...
+    # inline
+    <- Import[experience/symbolic_tensor/module/symbolic_transform.py]
+
+forward := ...

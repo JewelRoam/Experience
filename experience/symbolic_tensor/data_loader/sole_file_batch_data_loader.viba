@@ -1,0 +1,17 @@
+
+# data loader that yields symbolic tensors from files in a directory
+# each element's storage contains a symlink to the original file
+
+SoleFileBatchDataLoader :=
+    Iterable[$batch Symbolic[torch.Tensor]]
+    <- $root_dir str
+    <- $extension (str | None)
+    <- $batch_size int
+    # inline
+    <- $make_tensor Import[experience/symbolic_tensor/tensor_util/make_tensor.viba]
+    # walk root_dir, collect relative file paths filtered by extension
+    # yield batches of symbolic tensors via make_tensor with symlink=True
+    # each batch shape = (batch_size,), each element symlinks to original file
+    # batch.requires_grad_(False)
+
+# tests in __main__ block

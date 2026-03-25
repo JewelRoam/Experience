@@ -1,0 +1,12 @@
+
+# Prompt is only for comprehension. do not generate
+Prompt := str
+
+SymbolicTransform := torch.autograd.Function[
+    $forward Import[experience/symbolic_tensor/function/symbolic_transform_forward.viba],
+    $backward Import[experience/symbolic_tensor/function/symbolic_transform_backward.viba],
+]
+
+symbolic_transform := SymbolicTransform.apply
+
+# add tests in __main__ block

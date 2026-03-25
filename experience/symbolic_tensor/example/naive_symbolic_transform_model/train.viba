@@ -1,0 +1,10 @@
+main :=
+    void
+    # inline
+    <- Import[experience/symbolic_tensor/example/naive_symbolic_transform_model/model.py].NaiveModel
+    <- Import[experience/symbolic_tensor/data_loader/sole_file_batch_data_loader.py]
+    <- Import[experience/symbolic_tensor/function/get_edit_distance_ratio.py]
+    <- Import[experience/symbolic_tensor/optimizer/symbolic_sgd.py]
+    <- $prompt "Translate Python To Viba"
+    # 5 iterations, validate loss convergence.
+    # save loss of each iteration to /tmp/loss.log

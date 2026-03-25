@@ -1,0 +1,24 @@
+
+AgentTask := Import[experience/symbolic_tensor/llm_client/agent_task.viba]
+
+TaskHandler :=
+    # __call__
+    void
+    <- NestList[AgentTask]
+    <- $llm_method str
+    # __init__
+    <- ()
+    # inline
+    <- GenerateOutput[$llm_method]
+
+GenerateOutput["coding_agent"] :=
+    void
+    <- NestList[AgentTask]
+    # inline
+    <- Import[experience/symbolic_tensor/llm_client/coding_agent_task_handler.viba]
+
+GenerateOutput["raw_llm_api"] :=
+    void
+    <- NestList[AgentTask]
+    # inline
+    <- Import[experience/symbolic_tensor/llm_client/raw_llm_task_handler.viba]
