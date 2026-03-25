@@ -1,78 +1,24 @@
-# Symbolic Tensor
+# Experience
 
-A PyTorch extension that enables **symbolic text operations** within neural network computation graphs. Each tensor element is backed by a file on disk storing arbitrary text (code, translations, etc.), while the numeric tensor coefficients flow through standard autograd. LLM agents perform the actual "computation" on text content during forward/backward passes.
+A PyTorch extension that replaces numeric matrix multiplication with **LLM-powered text computation** inside neural network training loops. Each tensor element stores arbitrary text (code, translations, etc.) in files on disk, while numeric coefficients flow through standard autograd. ExperienceTensor — a key-value store shaped as `[N, 3]` — serves as the learnable "weight" of the model, starting empty and being built up entirely by a patch-based optimizer across training iterations. The LLM acts as the compute kernel: during forward pass it reads experience entries to produce outputs; during backward pass it computes diffs; during the optimizer step `git apply` patches experience entries incrementally.
 
-## Core Idea
-
-Traditional tensors store numbers. **Symbolic tensors store text** — each element is a file on disk, and the numeric coefficient (default `1`) acts as a signal strength indicator. This allows building trainable models where the "weights" are natural language mappings (e.g., translation pairs) that are updated by an LLM-based optimizer.
-
-```
-Standard Tensor:    [0.5, 0.3, 0.8]           -> numbers
-Symbolic Tensor:    ["hello world", "bonjour"]   -> text files + coefficients
-```
+The result is a model that can **learn to perform tasks it was never trained on** by accumulating experience at runtime, demonstrated by translating Python into Viba — a novel DSL that does not exist in the training corpus of any existing LLM.
 
 ## Architecture
 
 ```
 experience/
-├── symbolic_tensor/         # Core tensor operations
-│   ├── tensor_util/             # Low-level tensor primitives
-│   │   ├── make_tensor          # Create symbolic tensor from nested strings/Paths
-│   │   ├── make_none_tensor     # Create zero-filled symbolic tensor (placeholder)
-│   │   ├── empty_tensor_like    # Create empty-string-filled tensor matching shape
-│   │   ├── todo_tensor_like     # Create TODO-filled tensor matching shape
-│   │   ├── load_tensor          # Restore tensor from dumped directory
-│   │   ├── dump_tensor          # Serialize tensor storage + metadata
-│   │   ├── dump_view            # Create coordinate-based symlink views for LLM
-│   │   ├── slice_view           # Slice via symlinks (shared storage)
-│   │   ├── slice_tensor         # Slice via file copies (independent storage)
-│   │   ├── pack_tensor          # Pack tensor into a single string representation
-│   │   ├── assign_tensor        # Assign values to tensor elements by coordinates
-│   │   ├── get_diff_tensor      # Compute unified diff between two tensors
-│   │   ├── patch_tensor         # Apply patch to tensor using git apply
-│   │   ├── register_tensor_ops  # Register custom ops on torch.Tensor
-│   │   └── st_copy              # Deep copy with autograd support
-│   ├── function/                # autograd.Function implementations
-│   │   ├── symbolic_transform              # Dual-channel forward/backward wrapper
-│   │   ├── symbolic_transform_forward      # Forward: input -> output via LLM + experience
-│   │   ├── symbolic_transform_backward     # Backward: compute symbolic gradients via LLM
-│   │   ├── select_qkv_indexes              # Jaccard similarity-based experience retrieval
-│   │   ├── get_input_query_tensor          # LLM-generated query keywords per element
-│   │   ├── get_edit_distance_ratio         # Text similarity loss (Levenshtein-based)
-│   │   └── symbolic_grad_registry          # Thread-local metadata pass-through between autograd Functions
-│   ├── module/                  # torch.nn.Module wrappers
-│   │   └── symbolic_transform  # SymbolicTransformModule (like nn.Linear for text)
-│   ├── optimizer/               # Training optimizers
-│   │   └── symbolic_sgd        # Patch-based SGD: diff experience, apply patches
-│   └── data_loader/             # Dataset utilities
-│       └── sole_file_batch_data_loader  # Load files into symbolic tensors
-├── llm_client/              # LLM backend interface (two methods)
-│   ├── task_handler              # Dispatches tasks to the selected LLM method
-│   ├── agent_task                # AgentTask dataclass: unit of work for LLM
-│   ├── coding_agent_query        # Async Claude Agent SDK wrapper
-│   ├── coding_agent_task_handler # Dispatches to Claude coding agent (file system access)
-│   ├── raw_llm_query             # Async OpenAI-compatible API call
-│   └── raw_llm_task_handler      # Dispatches via raw LLM API (prompt-based)
-├── sparse_util/             # Sparse coordinate utilities
-│   ├── group_random_select                                   # Random selection within groups
-│   ├── convert_nested_list_coordinates_to_pairs_coordinates # Nested list <-> flat coordinate pairs
-│   └── transpose_pairs_coordinates                          # Transpose sparse coordinate matrices
-├── fs_util/                 # File system utilities
-│   ├── get_nested_list_file_pathes  # Enumerate file paths matching nested list structure
-│   └── pack_dir                      # Packs directory into single string for raw LLM context
-├── test/                    # Integration tests and benchmarks
-│   ├── test_gain_symbolic_sgd                # End-to-end training step test
-│   └── test_transform_method_time_comparison # coding_agent vs raw_llm_api benchmark
-└── example/                 # End-to-end example
-    └── naive_symbolic_transform_model/
-        ├── train.py      # Training loop
-        ├── model.py      # NaiveModel wrapping SymbolicTransformModule
-        └── dataset/      # 12 Python/Viba code pairs
+├── symbolic_tensor/     # Core tensor primitives, autograd functions, module, optimizer
+├── llm_client/          # LLM backends: coding agent (Claude SDK) and raw API (OpenAI-compatible)
+├── sparse_util/         # Sparse coordinate operations
+├── fs_util/             # File system utilities (directory packing, path enumeration)
+├── test/                # Integration tests and benchmarks
+└── example/             # End-to-end training demo
 ```
 
 ## Dual-Channel Gradient System
 
-Symbolic tensors propagate gradients through **two channels**:
+Gradients propagate through two channels simultaneously:
 
 | Channel | What it carries | How it's computed |
 |---------|----------------|-------------------|
@@ -83,32 +29,32 @@ The `symbolic_grad_registry` (thread-local dictionary) passes symbolic gradient 
 
 ## LLM Backend Methods
 
-Two LLM backends are supported via the `TransformMethod` enum:
+Two backends are supported via the `TransformMethod` enum:
 
-### `coding_agent` (default)
-Uses Claude Agent SDK with `Read`, `Edit`, `Write` tool access. The agent can directly read context files and modify output files in the workspace. Best for complex tasks requiring file system interaction.
+### `raw_llm_api` (default)
+OpenAI-compatible API (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`). Packs directory contents into a prompt, finds files containing the TODO placeholder, and replaces them with LLM responses. Lightweight, no tool access.
 
-### `raw_llm_api`
-Uses OpenAI-compatible API (`LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL` env vars). Packs directory contents into a prompt via `pack_dir`, finds files containing the TODO placeholder, and replaces their content with LLM responses. Lighter weight, no tool access.
+### `coding_agent`
+Claude Agent SDK with `Read`, `Edit`, `Write` tool access. The agent can directly read and modify files in the workspace. Best for complex tasks requiring file system interaction.
 
-Both methods are dispatched through `TaskHandler`, which takes a list of `AgentTask` objects and runs them concurrently via `asyncio.gather`.
+Both are dispatched through `TaskHandler`, which takes `AgentTask` objects and runs them concurrently via `asyncio.gather`.
 
-## Experience
+## ExperienceTensor
 
-An **Experience** is a symbolic tensor of shape `[N, 3]` where each row is a `(query, key, value)` triple:
+An **ExperienceTensor** is a symbolic tensor of shape `[N, 3]` where each row is a `(query, key, value)` triple:
 - **Query** (position 0): Semantic keywords (one per line) used for Jaccard similarity retrieval
 - **Key** (position 1): Source domain content (e.g., Python code)
 - **Value** (position 2): Target domain content (e.g., code in another language)
 
-Experience acts as the learnable "weight" of the model. It starts empty and is populated during training — the backward pass computes diffs against the expected output, and the optimizer applies patches to experience entries via `git apply`.
+It acts as the learnable "weight" of the model — starts empty and is populated during training. The backward pass computes diffs against expected output, and the optimizer applies patches to experience entries via `git apply`.
 
 ## Demo: Python to Viba Translation
 
-This example trains a model from scratch to translate Python code into **Viba** — a novel domain-specific language (DSL) invented for this project. Viba is a pattern-matching language that does not exist in the training corpus of any existing LLM. This makes it a rigorous test: the LLM must learn to generate syntactically and semantically correct code in a language it has never seen before, purely from the experience entries built up during training.
+This example trains a model from scratch to translate Python code into **Viba** — a novel domain-specific language invented for this project that does not exist in the training corpus of any existing LLM. The LLM must learn to generate syntactically and semantically correct code in a language it has never seen, purely from the experience entries built up during training.
 
 ### Why Viba?
 
-Existing LLMs have been trained on billions of lines of code in Python, JavaScript, Haskell, etc. Translating between these languages tests whether the model can *recall* patterns from its training data. Viba eliminates this confound — no existing LLM has ever seen Viba code, so any correct translation demonstrates genuine *generalization* driven by the experience mechanism, not retrieval from pre-training.
+Existing LLMs have been trained on billions of lines of Python, JavaScript, Haskell, etc. Translating between these tests whether the model can *recall* patterns from pre-training. Viba eliminates this confound — any correct translation demonstrates genuine *generalization* driven by the experience mechanism.
 
 Viba features:
 - `<-` for variable binding / return
@@ -120,7 +66,7 @@ Viba features:
 
 ### 1. Dataset
 
-12 Python-to-Viba translation pairs covering various patterns:
+12 Python-to-Viba translation pairs:
 
 | Pattern | Python | Viba |
 |---------|--------|------|
@@ -201,70 +147,12 @@ with tempfile.TemporaryDirectory() as tmpdir:
 ### 5. Run
 
 ```bash
-# Requires ANTHROPIC_API_KEY or LLM_API_KEY/LLM_BASE_URL/LLM_MODEL env vars
 python -m experience.symbolic_tensor.example.naive_symbolic_transform_model.train
 ```
-
-Output:
-```
-============================================================
-NaiveModel Training: Translate Python To Viba
-============================================================
-
-Dataset: 12 pairs
-  [0] seq.py -> seq.viba
-  [1] branch.py -> branch.viba
-  ...
-  [11] closure.py -> closure.viba
-
-Experience: [12, 3]
-Input:      [12]
-Expected:   [12]
-
-────────────────────────────────────────────────────────────
-Iteration 1/5
-────────────────────────────────────────────────────────────
-
-  [Forward]
-    output[0]: 'classify :=\n    | x > 0 -> "positive"\n    | ...'
-    ...
-
-  [Loss]
-    Per-sample: ['0.4500', '0.3200', ...]
-    Mean: 0.3850
-
-  [Backward]
-    grad_exp[0]: '--- a/0\n+++ b/0\n@@ -1,3 +1,4 @@\n...'
-
-  [Step]
-    Patches: applied=8 rejected=2 fuzzed=1 skipped=3
-    Experience after step:
-      [0]: 'branch\npython\nviba'
-      [1]: 'def classify(x):\n    if x > 0: ...'
-      ...
-
-...
-
-============================================================
-Training Complete
-============================================================
-
-Loss trajectory: ['0.3850', '0.3100', '0.2400', '0.1800', '0.1200']
-Loss CONVERGED (final < initial)
-```
-
-### 6. How Training Works
-
-1. **Forward**: For each Python input, the LLM retrieves relevant experience entries (by Jaccard similarity), reads the key-value mappings, and translates the input to Viba.
-2. **Loss**: Edit distance ratio measures how close the LLM output is to the expected Viba code.
-3. **Backward**: The backward pass computes `diff -u` between actual and expected outputs, producing symbolic gradients stored as unified diffs.
-4. **Optimizer**: `SymbolicSGD` applies these diffs as patches to experience entries using `git apply`, with stats tracking (applied, rejected, fuzzed).
 
 ## How It Works
 
 ### Storage Layout
-
-Each symbolic tensor stores its text content on disk:
 
 ```
 {relative_to}/{tensor_uid}/
@@ -272,52 +160,46 @@ Each symbolic tensor stores its text content on disk:
 ├── storage/
 │   ├── 0/data               # Element at flat index 0
 │   ├── 1/data               # Element at flat index 1
-│   ├── ...
 │   └── 1/1/data             # Multi-digit index 11
 ```
 
-### Forward Pass Pipeline
+### Forward Pass
 
 1. **Query Generation**: LLM extracts semantic keywords from each input element
-2. **Experience Retrieval**: Jaccard similarity selects top-k relevant experience entries (with Gaussian noise for exploration)
-3. **Context Assembly**: Dump symlink views of experience (query/key/value) and input
-4. **Task Dispatch**: `TaskHandler` creates `AgentTask` objects and dispatches to the selected LLM backend
-5. **LLM Translation**: Agent reads context and writes output to mutable copies
-6. **Copy-back**: Results propagate through symlinks to parent tensor storage
+2. **Experience Retrieval**: Jaccard similarity selects top-k relevant experience entries
+3. **Context Assembly**: Dump symlink views of experience and input
+4. **Task Dispatch**: `TaskHandler` dispatches `AgentTask` objects to the LLM backend
+5. **Copy-back**: Results propagate through symlinks to parent storage
 
-### Backward Pass Pipeline
+### Backward Pass
 
-1. **Loss Backward**: `get_edit_distance_ratio` produces unified diffs as symbolic gradients
-2. **Transform Backward**: Numeric coefficient pass-through + scatter-add to experience; symbolic gradients propagated via `symbolic_grad_registry`
-3. Both channels merge into the gradient tensor
+1. `get_edit_distance_ratio` produces unified diffs as symbolic gradients
+2. Numeric coefficients pass through; symbolic gradients propagated via `symbolic_grad_registry`
 
-### Optimizer Pipeline
+### Optimizer
 
-1. **Diff**: Compute `get_diff_tensor` between current experience and gradient (which contains target content)
-2. **Patch**: Apply `patch_tensor` via `git apply` to update experience storage files
-3. **Stats**: Track patch application results (applied, rejected, fuzzed, skipped)
+`SymbolicSGD` computes `get_diff_tensor` then applies `patch_tensor` via `git apply` — incremental patch-based updates instead of full regeneration.
 
 ## Key Design Decisions
 
-- **Symlinks for views, copies for mutations**: `slice_view` creates symlinks (shared storage, read-only context); `slice_tensor` creates independent copies (safe for LLM writes)
-- **Coordinate-based views**: `dump_view` maps multi-dimensional indices to human-readable paths (e.g., `0/1/data.txt`) for LLM consumption
-- **Two LLM backends**: `coding_agent` (Claude Agent SDK with tools) vs `raw_llm_api` (prompt-based, OpenAI-compatible) — switchable via `method` parameter
-- **Patch-based optimizer**: Instead of regenerating experience from scratch, `SymbolicSGD` applies `git diff`/`git apply` patches for efficient incremental updates
-- **Symbolic grad registry**: Thread-local dict bridges autograd Function calls that lose custom tensor attributes
-- **LLM as compute kernel**: The LLM replaces traditional matrix multiplication with semantic reasoning
+- **LLM as compute kernel**: Replaces matrix multiplication with semantic reasoning
+- **Patch-based optimizer**: `git diff`/`git apply` for efficient incremental experience updates
+- **Two LLM backends**: `raw_llm_api` (default, lightweight) and `coding_agent` (tool access)
+- **Symlinks for views, copies for mutations**: Shared storage for context, independent copies for LLM writes
+- **Experience starts empty**: Learned entirely at runtime, not pre-seeded
 
 ## Dependencies
 
 - Python 3.13+
 - PyTorch
-- `claude-agent-sdk` (for `coding_agent` method)
-- `openai` (for `raw_llm_api` method)
-- `Levenshtein` (edit distance computation)
+- `openai` (default LLM backend)
+- `claude-agent-sdk` (alternative LLM backend)
+- `Levenshtein` (edit distance loss)
 
 ## Installation
 
 ```bash
-pip install torch claude-agent-sdk openai Levenshtein
+pip install torch openai claude-agent-sdk Levenshtein
 ```
 
 ## Quick Start
