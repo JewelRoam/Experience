@@ -173,8 +173,11 @@ python -m experience.example.naive_symbolic_transform_model.train
 
 ### Backward Pass
 
-1. `get_edit_distance_ratio` produces unified diffs as symbolic gradients
-2. Numeric coefficients pass through; symbolic gradients propagated via `symbolic_grad_registry`
+Computes gradients for both **input** and **experience** through numeric + symbolic channels.
+
+**Grad Input** (per element): Numeric is a pass-through (`grad_input.data = grad_output.data`). Symbolically, the LLM reads grad_output diffs alongside original input/output/experience and writes improved input files — the diff becomes the symbolic gradient.
+
+**Grad Experience** (aggregated): The forward pass index list is transposed to group by experience entry (identifying which entries were used and by how many inputs). Cold-start padding randomly samples empty experience entries so they still receive gradients. The backward runs twice — once for key, once for value — with domain-specific prompts. The LLM merges multiple grad_output signals and writes improved experience files. Numerically, `grad_experience.data` scatter-adds `1.0` per usage count.
 
 ### Optimizer
 
