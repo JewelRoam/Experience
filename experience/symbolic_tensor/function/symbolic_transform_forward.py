@@ -9,7 +9,7 @@ from experience.symbolic_tensor.tensor_util.todo_tensor_like import todo_tensor_
 from experience.symbolic_tensor.tensor_util.slice_view import slice_view
 from experience.symbolic_tensor.tensor_util.slice_tensor import slice_tensor
 from experience.symbolic_tensor.tensor_util.dump_view import dump_view
-from experience.symbolic_tensor.function.get_input_query_tensor import get_input_query_tensor
+from experience.symbolic_tensor.function.get_query_tensor import get_query_tensor
 from experience.symbolic_tensor.function.select_qkv_indexes import select_qkv_indexes
 from experience.llm_client.agent_task import AgentTask
 from experience.llm_client.task_handler import TaskHandler
@@ -170,7 +170,7 @@ def symbolic_transform_forward(
     output = todo_tensor_like(input)
 
     # Generate input query keywords
-    input_query = get_input_query_tensor(input, llm_method=llm_method)
+    input_query = get_query_tensor(input, llm_method=llm_method)
 
     # Phase 1: Build requests per scalar element
     coords_list = _scalar_slice_indices(input.size())

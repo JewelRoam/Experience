@@ -48,7 +48,7 @@ symbolic_transform_forward :=
     <- (NestList[$scalar_output_view Symbolic[torch.Tensor]] <- NestList[$slice_view] <- $output)
     <- (NestList[$scalar_output_value Symbolic[torch.Tensor]] <- NestList[$slice_tensor] <- $output)
     <- ($input_query
-        <- Import[experience/symbolic_tensor/function/get_input_query_tensor.viba]
+        <- Import[experience/symbolic_tensor/function/get_query_tensor.viba]
         <- $input
         <- $llm_method)
     <- (NestList[$scalar_input_view Symbolic[torch.Tensor]] <- NestList[$slice_view] <- $input)

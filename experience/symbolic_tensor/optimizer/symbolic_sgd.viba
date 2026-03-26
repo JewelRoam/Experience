@@ -44,7 +44,7 @@ step :=
     
     # update queries
     <- ($kv_queries
-        <- Import[experience/symbolic_tensor/function/get_input_query_tensor.viba]
+        <- Import[experience/symbolic_tensor/function/get_query_tensor.viba]
         <- $kv_param)
     <- (NestedList[($query_from_key_file_path, $query_from_value_file_path)] <- $kv_queries.st_file_paths)
     <- ($query_for_kv_content str

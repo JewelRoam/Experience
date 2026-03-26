@@ -153,7 +153,7 @@ class SymbolicSGD(torch.optim.Optimizer):
         """After patching key+value, auto-derive query content from updated key+value text.
 
         Flow per viba:
-        1. Run get_input_query_tensor on kv_param → LLM generates keywords per element
+        1. Run get_query_tensor on kv_param → LLM generates keywords per element
         2. Read keyword files for each (key, value) pair
         3. Merge, sort, unique, join with newline
         4. Write to query file
@@ -161,14 +161,14 @@ class SymbolicSGD(torch.optim.Optimizer):
         if not hasattr(param, "st_tensor_uid"):
             return
 
-        from experience.symbolic_tensor.function.get_input_query_tensor import get_input_query_tensor
+        from experience.symbolic_tensor.function.get_query_tensor import get_query_tensor
 
         # kv_points: key(1) + value(2) dims
         kv_points = list(unique_row_points) + [slice(1, 3, None)]
         kv_param = slice_view(param, kv_points)
 
-        # Step 1: Run get_input_query_tensor on kv_param to generate LLM keywords
-        kv_queries = get_input_query_tensor(kv_param, llm_method="raw_llm_api")
+        # Step 1: Run get_query_tensor on kv_param to generate LLM keywords
+        kv_queries = get_query_tensor(kv_param, llm_method="raw_llm_api")
 
         # Step 2: Get file paths from kv_queries (LLM-generated keywords)
         kv_query_file_paths = get_nested_list_file_pathes(kv_queries)
