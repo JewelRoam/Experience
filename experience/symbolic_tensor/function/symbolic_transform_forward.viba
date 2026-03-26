@@ -36,6 +36,7 @@ symbolic_transform_forward :=
     <- $input Symboilc[torch.Tensor]
     <- $experience ExperienceTensor[Symbolic[torch.Tensor]]
     <- $output_prompt $func ($ret str <- $task_prompt str <- $workspace_dir str <- $const_experience_view str <- $const_input_view str <- $mutable_output_dir str) # default None
+    <- $query_prompt $func ($ret str <- $task_prompt str <- $input_view_dir str <- $mutable_output_dir str) # default None
     <- $task_prompt str # default ""
     <- $topk int # default 16
     <- $llm_method ("coding_agent" | "raw_llm_api") # default raw_llm_api
@@ -50,6 +51,8 @@ symbolic_transform_forward :=
     <- ($input_query
         <- Import[experience/symbolic_tensor/function/get_query_tensor.viba]
         <- $input
+        <- $query_prompt
+        <- $task_prompt
         <- $llm_method)
     <- (NestList[$scalar_input_view Symbolic[torch.Tensor]] <- NestList[$slice_view] <- $input)
     <- ($batch_input_file_content str <- $scalar_input_view)

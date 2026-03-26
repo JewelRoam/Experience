@@ -20,6 +20,7 @@ class SymbolicTransformModule(nn.Module):
     Args:
         experience_shape: Shape of the experience tensor, e.g. [num_entries, 3].
         output_prompt: Callable that builds the forward prompt. None uses default.
+        query_prompt: Callable that builds the query keyword prompt. None uses default.
         grad_input_prompt: Callable that builds the grad_input prompt. None uses default.
         grad_exp_key_prompt: Callable that builds the experience key gradient prompt. None uses default.
         grad_exp_value_prompt: Callable that builds the experience value gradient prompt. None uses default.
@@ -33,6 +34,7 @@ class SymbolicTransformModule(nn.Module):
         self,
         experience_shape: List[int],
         output_prompt: Optional[Callable[..., str]] = None,
+        query_prompt: Optional[Callable[..., str]] = None,
         grad_input_prompt: Optional[Callable[..., str]] = None,
         grad_exp_key_prompt: Optional[Callable[..., str]] = None,
         grad_exp_value_prompt: Optional[Callable[..., str]] = None,
@@ -41,6 +43,7 @@ class SymbolicTransformModule(nn.Module):
     ):
         super().__init__()
         self.output_prompt = output_prompt
+        self.query_prompt = query_prompt
         self.grad_input_prompt = grad_input_prompt
         self.grad_exp_key_prompt = grad_exp_key_prompt
         self.grad_exp_value_prompt = grad_exp_value_prompt
@@ -56,7 +59,7 @@ class SymbolicTransformModule(nn.Module):
     def forward(self, input: torch.Tensor) -> Tuple[torch.Tensor, Any]:
         return symbolic_transform(
             input, self.experience,
-            self.output_prompt, self.grad_input_prompt,
+            self.output_prompt, self.query_prompt, self.grad_input_prompt,
             self.grad_exp_key_prompt, self.grad_exp_value_prompt,
             self.task_prompt, self.topk,
         )

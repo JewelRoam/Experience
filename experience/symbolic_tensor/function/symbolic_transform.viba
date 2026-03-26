@@ -1,11 +1,13 @@
 
 # Re-export default prompt callables for public API
 default_prompt_for_output := Import[experience/symbolic_tensor/function/symbolic_transform_forward.viba].default_prompt_for_output
+default_prompt_for_query := Import[experience/symbolic_tensor/function/get_query_tensor.viba].default_prompt_for_query
 default_prompt_for_grad_input := Import[experience/symbolic_tensor/function/symbolic_transform_backward.viba].default_prompt_for_grad_input
 default_prompt_for_grad_exp_key := Import[experience/symbolic_tensor/function/symbolic_transform_backward.viba].default_prompt_for_grad_exp_key
 default_prompt_for_grad_exp_value := Import[experience/symbolic_tensor/function/symbolic_transform_backward.viba].default_prompt_for_grad_exp_value
 
 OutputPromptCallable := $func ($ret str <- $task_prompt str <- $workspace_dir str <- $const_experience_view str <- $const_input_view str <- $mutable_output_dir str)
+QueryPromptCallable := Import[experience/symbolic_tensor/function/get_query_tensor.viba].QueryPromptCallable
 BackwardPromptCallable := Import[experience/symbolic_tensor/function/symbolic_transform_backward.viba].BackwardPromptCallable
 
 SymbolicTransform := torch.autograd.Function[
@@ -13,6 +15,7 @@ SymbolicTransform := torch.autograd.Function[
     $backward Import[experience/symbolic_tensor/function/symbolic_transform_backward.viba],
     # ctx saves all four prompt callables for backward
     $ctx.output_prompt OutputPromptCallable # default None
+    $ctx.query_prompt QueryPromptCallable # default None
     $ctx.grad_input_prompt BackwardPromptCallable # default None
     $ctx.grad_exp_key_prompt BackwardPromptCallable # default None
     $ctx.grad_exp_value_prompt BackwardPromptCallable # default None

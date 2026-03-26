@@ -14,6 +14,7 @@ from experience.symbolic_tensor.function.symbolic_transform_backward import (
     default_prompt_for_grad_exp_key,
     default_prompt_for_grad_exp_value,
 )
+from experience.symbolic_tensor.function.get_query_tensor import default_prompt_for_query
 from experience.symbolic_tensor.tensor_util.todo_tensor_like import todo_tensor_like
 from experience.symbolic_tensor.function import symbolic_grad_registry
 
@@ -25,6 +26,7 @@ class SymbolicTransform(torch.autograd.Function):
         input: torch.Tensor,
         experience: torch.Tensor,
         output_prompt: Optional[Callable[..., str]] = None,
+        query_prompt: Optional[Callable[..., str]] = None,
         grad_input_prompt: Optional[Callable[..., str]] = None,
         grad_exp_key_prompt: Optional[Callable[..., str]] = None,
         grad_exp_value_prompt: Optional[Callable[..., str]] = None,
@@ -33,7 +35,7 @@ class SymbolicTransform(torch.autograd.Function):
         llm_method: str = "raw_llm_api",
     ) -> Tuple[torch.Tensor, Any]:
         output, selected_experience_qkv_indexes_list = symbolic_transform_forward(
-            input, experience, output_prompt, task_prompt, topk, llm_method=llm_method
+            input, experience, output_prompt, query_prompt, task_prompt, topk, llm_method=llm_method
         )
 
         # Save tensors for backward
@@ -98,9 +100,9 @@ class SymbolicTransform(torch.autograd.Function):
             symbolic_grad_registry.register(input.st_tensor_uid, grad_input)
         symbolic_grad_registry.register(experience.st_tensor_uid, grad_experience)
 
-        # Return grads for (input, experience, output_prompt, grad_input_prompt,
+        # Return grads for (input, experience, output_prompt, query_prompt, grad_input_prompt,
         #                    grad_exp_key_prompt, grad_exp_value_prompt, task_prompt, topk, llm_method)
-        return grad_input, grad_experience, None, None, None, None, None, None, None
+        return grad_input, grad_experience, None, None, None, None, None, None, None, None
 
 
 symbolic_transform = SymbolicTransform.apply
@@ -148,6 +150,7 @@ if __name__ == "__main__":
         output, selected_indexes = SymbolicTransform.apply(
             input_tensor, experience_tensor,
             None,  # output_prompt
+            None,  # query_prompt
             None,  # grad_input_prompt
             None,  # grad_exp_key_prompt
             None,  # grad_exp_value_prompt

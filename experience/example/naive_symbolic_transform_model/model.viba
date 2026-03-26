@@ -1,4 +1,5 @@
 OutputPromptCallable := Import[experience/symbolic_tensor/function/symbolic_transform.viba].OutputPromptCallable
+QueryPromptCallable := Import[experience/symbolic_tensor/function/symbolic_transform.viba].QueryPromptCallable
 BackwardPromptCallable := Import[experience/symbolic_tensor/function/symbolic_transform.viba].BackwardPromptCallable
 
 NaiveModel := torch.nn.Module
@@ -7,6 +8,7 @@ __init__ :=
     void
     <- $self NaiveModel
     <- $output_prompt OutputPromptCallable # default None
+    <- $query_prompt QueryPromptCallable # default None
     <- $grad_input_prompt BackwardPromptCallable # default None
     <- $grad_exp_key_prompt BackwardPromptCallable # default None
     <- $grad_exp_value_prompt BackwardPromptCallable # default None
