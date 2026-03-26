@@ -2,7 +2,7 @@ import os
 import torch
 import torch.nn as nn
 from pathlib import Path
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from experience.symbolic_tensor.module.symbolic_transform import SymbolicTransformModule
 from experience.symbolic_tensor.tensor_util.make_tensor import make_tensor
@@ -27,6 +27,7 @@ class NaiveModel(nn.Module):
         grad_exp_value_prompt: Callable that builds the experience value gradient prompt. None uses default.
         task_prompt: High-level task description (e.g. "Translate Python To Viba").
         topk: Number of experience entries to select.
+        llm_env: Environment variable dict for LLM client. None uses os.environ defaults.
     """
 
     def __init__(
@@ -38,6 +39,7 @@ class NaiveModel(nn.Module):
         grad_exp_value_prompt: Optional[Callable[..., str]] = None,
         task_prompt: str = "",
         topk: int = 16,
+        llm_env: Optional[Dict[str, str]] = None,
     ):
         super().__init__()
         self.transform = SymbolicTransformModule(
@@ -49,6 +51,7 @@ class NaiveModel(nn.Module):
             grad_exp_value_prompt=grad_exp_value_prompt,
             task_prompt=task_prompt,
             topk=topk,
+            llm_env=llm_env,
         )
 
     def load_experience(self, experience: torch.Tensor):

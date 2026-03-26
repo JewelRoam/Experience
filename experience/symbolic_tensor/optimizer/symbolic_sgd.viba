@@ -14,7 +14,9 @@ __init__ :=
     void
     <- $self SymbolicSGD
     <- $params ParamsT
-    <- $lr float # default 0.01    # inline
+    <- $lr float # default 0.01
+    <- $llm_env dict[str, str] # default None
+    # inline
     <- (void <- super().__init__ <- $params <- dict[lr=$lr])
 
 step :=

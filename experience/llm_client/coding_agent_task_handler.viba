@@ -3,10 +3,11 @@ CodingAgentTaskHandler :=
     # __call__
     void
     <- NestedList[$agent_task Import[experience/llm_client/agent_task.viba]]
+    <- $llm_env dict[str, str] # default None
     # __init__
     <- ()
     # inline
     <- (($workspace_dir, $prompt) <- $agent_task)
     <- $llm_query Import[experience/llm_client/coding_agent_query.py].coding_agent_query
-    <- $async_do_for_one_batch (void <- $llm_query <- $prompt <- $workspace_dir)
+    <- $async_do_for_one_batch (void <- $llm_query <- $prompt <- $workspace_dir <- $llm_env)
     <- (void <- async_gather_run <- NestList[$async_do_for_one_batch])

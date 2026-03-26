@@ -3,7 +3,7 @@ import itertools
 import shutil
 import tempfile
 import torch
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from experience.symbolic_tensor.tensor_util.todo_tensor_like import todo_tensor_like
 from experience.symbolic_tensor.tensor_util.assign_tensor import assign_tensor
@@ -75,6 +75,7 @@ def fork_tensor_backward(
     grad_input_prompt: Optional[Callable[..., str]] = None,
     task_prompt: str = "",
     llm_method: str = "raw_llm_api",
+    llm_env: Optional[Dict[str, str]] = None,
 ) -> Union[torch.Tensor, None]:
     """Backward pass of fork_tensor: merge multiple grad_outputs into one grad_input.
 
@@ -149,7 +150,7 @@ def fork_tensor_backward(
 
     # Batch LLM call
     if all_tasks:
-        TaskHandler()(all_tasks, llm_method)
+        TaskHandler()(all_tasks, llm_method, llm_env=llm_env)
 
     # Compute diff between original input and LLM-written improved version,
     # assign diff back to grad_input view
@@ -170,6 +171,7 @@ class ForkTensor(torch.autograd.Function):
         grad_input_prompt: Optional[Callable[..., str]] = None,
         task_prompt: str = "",
         llm_method: str = "raw_llm_api",
+        llm_env: Optional[Dict[str, str]] = None,
     ) -> Tuple[torch.Tensor, ...]:
         outputs = fork_tensor_forward(input, num_outputs)
 
@@ -193,6 +195,7 @@ class ForkTensor(torch.autograd.Function):
         ctx.grad_input_prompt = grad_input_prompt
         ctx.task_prompt = task_prompt
         ctx.llm_method = llm_method
+        ctx.llm_env = llm_env
 
         return tuple(outputs)
 
@@ -230,14 +233,15 @@ class ForkTensor(torch.autograd.Function):
             grad_input_prompt=ctx.grad_input_prompt,
             task_prompt=ctx.task_prompt,
             llm_method=ctx.llm_method,
+            llm_env=ctx.llm_env,
         )
 
         # Register symbolic grad keyed by input tensor uid
         if grad_input is not None:
             symbolic_grad_registry.register(input.st_tensor_uid, grad_input)
 
-        # Return grads for (input, num_outputs, grad_input_prompt, task_prompt, llm_method)
-        return grad_input, None, None, None, None
+        # Return grads for (input, num_outputs, grad_input_prompt, task_prompt, llm_method, llm_env)
+        return grad_input, None, None, None, None, None
 
 
 fork_tensor = ForkTensor.apply

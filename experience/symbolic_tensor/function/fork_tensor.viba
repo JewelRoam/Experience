@@ -49,6 +49,7 @@ fork_tensor_backward :=
     <- $grad_input_prompt ForkGradInputPromptCallable # default None
     <- $task_prompt str # default ""
     <- $llm_method ("coding_agent" | "raw_llm_api") # default raw_llm_api
+    <- $llm_env dict[str, str] # default None
     # inline
     <- EarlyReturn[IfNot[$input.requires_grad], $grad_input <- None]
     <- $slice_view Import[experience/symbolic_tensor/tensor_util/slice_view.viba]
@@ -81,7 +82,7 @@ fork_tensor_backward :=
         <- f"{workspace_dir}/mutable_grad_input_dir")
     <- ($agent_task AgentTask <- $workspace_dir <- "mutable_grad_input_dir" <- $prompt)
     <- ($all_tasks <- NestedList[$agent_task])
-    <- (void <- Import[experience/llm_client/task_handler.viba] <- $all_tasks <- $llm_method)
+    <- (void <- Import[experience/llm_client/task_handler.viba] <- $all_tasks <- $llm_method <- $llm_env)
     <- ($diff
         <- $scalar_input.st_get_diff
         <- $scalar_grad_input_value)
@@ -94,6 +95,7 @@ ForkTensor := torch.autograd.Function[
     $ctx.grad_input_prompt ForkGradInputPromptCallable # default None
     $ctx.task_prompt str # default ""
     $ctx.llm_method str
+    $ctx.llm_env dict[str, str] # default None
 ]
 
 fork_tensor := ForkTensor.apply

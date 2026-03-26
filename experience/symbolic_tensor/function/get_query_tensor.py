@@ -2,7 +2,7 @@ import os
 import itertools
 import tempfile
 import torch
-from typing import Callable, Optional
+from typing import Callable, Dict, Optional
 
 from experience.symbolic_tensor.tensor_util.todo_tensor_like import todo_tensor_like
 from experience.symbolic_tensor.tensor_util.slice_tensor import slice_tensor
@@ -59,6 +59,7 @@ def get_query_tensor(
     query_prompt: Optional[Callable[..., str]] = None,
     task_prompt: str = "",
     llm_method: str = "coding_agent",
+    llm_env: Optional[Dict[str, str]] = None,
 ) -> torch.Tensor:
     """
     Generate a query keyword tensor from an input symbolic tensor.
@@ -72,6 +73,7 @@ def get_query_tensor(
         query_prompt: Callable that builds the prompt. None uses default.
         task_prompt: High-level task description.
         llm_method: LLM method to use ("coding_agent" or "raw_llm_api").
+        llm_env: Environment variable dict for LLM client. None uses os.environ defaults.
 
     Returns:
         The output symbolic tensor whose storage files now contain keywords.
@@ -98,7 +100,7 @@ def get_query_tensor(
             output_relative_dir="mutable_output_dir",
             prompt=prompt,
         )
-        TaskHandler()([agent_task], llm_method)
+        TaskHandler()([agent_task], llm_method, llm_env=llm_env)
 
         # Copy back results to output tensor storage
         _copy_back_to_storage_view(output_view_dir, output)

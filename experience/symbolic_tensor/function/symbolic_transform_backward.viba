@@ -145,6 +145,7 @@ symbolic_transform_backward :=
     <- $task_prompt str # default ""
     <- $topk int # default 16
     <- $llm_method ("coding_agent" | "raw_llm_api") # default raw_llm_api
+    <- $llm_env dict[str, str] # default None
     <- ($grad_input <- symbolic_transform_backward_grad_input <- ... <- If[$input.requires_grad] <- Else[None])
     <- symbolic_transform_backward_grad_experience
 
@@ -160,6 +161,7 @@ symbolic_transform_backward_grad_input :=
     <- $task_prompt str # default ""
     <- $topk int # default 16
     <- $llm_method ("coding_agent" | "raw_llm_api") # default raw_llm_api
+    <- $llm_env dict[str, str] # default None
     # inline
     <- Notice[HasSameShape[NestedList[int], $input]]
     <- ($grad_input
@@ -208,7 +210,7 @@ symbolic_transform_backward_grad_input :=
         <- f"{workspace_dir}/mutable_grad_input_dir")
     <- ($agent_task AgentTask <- $workspace_dir <- "mutable_grad_input_dir" <- $prompt)
     <- ($all_tasks <- NestedList[$agent_task])
-    <- (void <- Import[experience/llm_client/task_handler.viba] <- $all_tasks <- $llm_method)
+    <- (void <- Import[experience/llm_client/task_handler.viba] <- $all_tasks <- $llm_method <- $llm_env)
     <- ($diff
         <- $scalar_input.st_get_diff
         <- $scalar_grad_input_value)
@@ -227,6 +229,7 @@ symbolic_transform_backward_grad_experience :=
     <- $task_prompt str # default ""
     <- $topk int # default 16
     <- $llm_method ("coding_agent" | "raw_llm_api") # default raw_llm_api
+    <- $llm_env dict[str, str] # default None
     # inline
     <- ($none_experience_indexes list[torch.Tensor[int]]
         <- select_random_indexes_with_none_experience_indexes # only add queries, i.e. last dim == 0
@@ -304,7 +307,7 @@ symbolic_transform_backward_grad_experience :=
         <- f"{workspace_dir}/mutable_grad_experience_dir")
     <- ($agent_task AgentTask <- $workspace_dir <- "mutable_grad_experience_dir" <- $prompt)
     <- ($all_tasks <- list[$agent_task])
-    <- (void <- Import[experience/llm_client/task_handler.viba] <- $all_tasks <- $llm_method)
+    <- (void <- Import[experience/llm_client/task_handler.viba] <- $all_tasks <- $llm_method <- $llm_env)
     <- ($diff
         <- $experience_sliced_view.st_get_diff
         <- $grad_experience_sliced_value)

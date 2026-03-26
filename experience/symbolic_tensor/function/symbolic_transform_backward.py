@@ -3,7 +3,7 @@ import shutil
 import tempfile
 import itertools
 import torch
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from experience.symbolic_tensor.tensor_util.todo_tensor_like import todo_tensor_like
 from experience.symbolic_tensor.tensor_util.empty_tensor_like import empty_tensor_like
@@ -289,6 +289,7 @@ def symbolic_transform_backward_grad_input(
     task_prompt: str = "",
     topk: int = 16,
     llm_method: str = "raw_llm_api",
+    llm_env: Optional[Dict[str, str]] = None,
 ) -> Union[torch.Tensor, None]:
     """Compute grad_input by iterating per input scalar element.
 
@@ -358,7 +359,7 @@ def symbolic_transform_backward_grad_input(
 
     # Batch LLM call
     if all_tasks:
-        TaskHandler()(all_tasks, llm_method)
+        TaskHandler()(all_tasks, llm_method, llm_env=llm_env)
 
     # Compute diff between original input and LLM-written improved version,
     # assign diff back to grad_input view
@@ -381,6 +382,7 @@ def symbolic_transform_backward_grad_experience(
     task_prompt: str = "",
     topk: int = 16,
     llm_method: str = "raw_llm_api",
+    llm_env: Optional[Dict[str, str]] = None,
 ) -> torch.Tensor:
     """Compute grad_experience by iterating per experience entry via transposed sparse coordinates.
 
@@ -471,7 +473,7 @@ def symbolic_transform_backward_grad_experience(
 
     # Batch LLM call
     if all_tasks:
-        TaskHandler()(all_tasks, llm_method)
+        TaskHandler()(all_tasks, llm_method, llm_env=llm_env)
 
     # Compute diff between original experience and LLM-written improved version,
     # assign diff back to grad_experience view
@@ -495,6 +497,7 @@ def symbolic_transform_backward(
     task_prompt: str = "",
     topk: int = 16,
     llm_method: str = "raw_llm_api",
+    llm_env: Optional[Dict[str, str]] = None,
 ) -> Tuple[Union[torch.Tensor, None], torch.Tensor]:
     """Backward pass of the symbolic transform.
 
@@ -522,13 +525,13 @@ def symbolic_transform_backward(
     grad_input = symbolic_transform_backward_grad_input(
         grad_output, input, output, experience,
         selected_experience_qkv_indexes_list,
-        grad_input_prompt, task_prompt, topk, llm_method,
+        grad_input_prompt, task_prompt, topk, llm_method, llm_env,
     )
 
     grad_experience = symbolic_transform_backward_grad_experience(
         grad_output, input, output, experience,
         selected_experience_qkv_indexes_list,
-        grad_exp_key_prompt, grad_exp_value_prompt, task_prompt, topk, llm_method,
+        grad_exp_key_prompt, grad_exp_value_prompt, task_prompt, topk, llm_method, llm_env,
     )
 
     return grad_input, grad_experience

@@ -1,6 +1,6 @@
 import os
 import asyncio
-from typing import List
+from typing import Dict, List, Optional
 
 from experience.llm_client.agent_task import AgentTask
 from experience.fs_util.pack_dir import pack_dir
@@ -33,7 +33,7 @@ def _grep_by_file_content_hint(root_dir: str, todo_file_content_hint: str) -> Li
 
 
 class RawLlmTaskHandler:
-    def __call__(self, all_tasks) -> None:
+    def __call__(self, all_tasks, llm_env: Optional[Dict[str, str]] = None) -> None:
         flat_tasks = _flatten_nested(all_tasks)
 
         # Collect all async jobs: (todo_file_path, coroutine)
@@ -70,7 +70,7 @@ class RawLlmTaskHandler:
 
         async def _do_one(todo_file_path: str, raw_llm_prompt: str):
             from experience.llm_client.raw_llm_query import raw_llm_query
-            output_content = await raw_llm_query(raw_llm_prompt)
+            output_content = await raw_llm_query(raw_llm_prompt, llm_env=llm_env)
             with open(todo_file_path, "w", encoding="utf-8") as f:
                 f.write(output_content)
 

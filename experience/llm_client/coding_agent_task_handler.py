@@ -1,6 +1,6 @@
 import os
 import asyncio
-from typing import List
+from typing import Dict, List, Optional
 
 from experience.llm_client.agent_task import AgentTask
 from experience.llm_client.coding_agent_query import coding_agent_query
@@ -17,7 +17,7 @@ def _flatten_nested(nested) -> list:
 
 
 class CodingAgentTaskHandler:
-    def __call__(self, all_tasks) -> None:
+    def __call__(self, all_tasks, llm_env: Optional[Dict[str, str]] = None) -> None:
         flat_tasks = _flatten_nested(all_tasks)
 
         async def _do_one(task: AgentTask):
@@ -25,7 +25,7 @@ class CodingAgentTaskHandler:
             prompt = task.prompt
             env_backup = os.environ.pop("CLAUDECODE", None)
             try:
-                async for _ in coding_agent_query(prompt=prompt, cwd=workspace_dir, allowed_tools=["Read", "Edit", "Write"]):
+                async for _ in coding_agent_query(prompt=prompt, cwd=workspace_dir, allowed_tools=["Read", "Edit", "Write"], llm_env=llm_env):
                     pass
             finally:
                 if env_backup is not None:

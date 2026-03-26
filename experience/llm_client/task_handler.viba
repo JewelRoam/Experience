@@ -6,6 +6,7 @@ TaskHandler :=
     void
     <- NestList[AgentTask]
     <- $llm_method str
+    <- $llm_env dict[str, str] # default None
     # __init__
     <- ()
     # inline

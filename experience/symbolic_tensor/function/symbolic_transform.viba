@@ -22,6 +22,7 @@ SymbolicTransform := torch.autograd.Function[
     $ctx.task_prompt str # default ""
     $ctx.topk int
     $ctx.llm_method str
+    $ctx.llm_env dict[str, str] # default None
 ]
 
 symbolic_transform := SymbolicTransform.apply

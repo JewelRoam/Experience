@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import torch
 import torch.nn as nn
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from experience.symbolic_tensor.function.symbolic_transform import symbolic_transform
 from experience.symbolic_tensor.tensor_util.make_none_tensor import make_none_tensor
@@ -26,6 +26,7 @@ class SymbolicTransformModule(nn.Module):
         grad_exp_value_prompt: Callable that builds the experience value gradient prompt. None uses default.
         task_prompt: High-level task description (e.g. "Translate Python To Viba").
         topk: Number of experience entries to select per input element.
+        llm_env: Environment variable dict for LLM client. None uses os.environ defaults.
     """
 
     experience: torch.Tensor
@@ -40,6 +41,7 @@ class SymbolicTransformModule(nn.Module):
         grad_exp_value_prompt: Optional[Callable[..., str]] = None,
         task_prompt: str = "",
         topk: int = 16,
+        llm_env: Optional[Dict[str, str]] = None,
     ):
         super().__init__()
         self.output_prompt = output_prompt
@@ -49,6 +51,7 @@ class SymbolicTransformModule(nn.Module):
         self.grad_exp_value_prompt = grad_exp_value_prompt
         self.task_prompt = task_prompt
         self.topk = topk
+        self.llm_env = llm_env
         self._experience_dir = tempfile.mkdtemp()
         self.experience = make_none_tensor(experience_shape, self._experience_dir)
         self.experience.requires_grad_(True)
@@ -61,7 +64,7 @@ class SymbolicTransformModule(nn.Module):
             input, self.experience,
             self.output_prompt, self.query_prompt, self.grad_input_prompt,
             self.grad_exp_key_prompt, self.grad_exp_value_prompt,
-            self.task_prompt, self.topk,
+            self.task_prompt, self.topk, "raw_llm_api", self.llm_env,
         )
 
 

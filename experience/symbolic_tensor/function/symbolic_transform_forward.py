@@ -3,7 +3,7 @@ import tempfile
 import itertools
 import shutil
 import torch
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from experience.symbolic_tensor.tensor_util.todo_tensor_like import todo_tensor_like
 from experience.symbolic_tensor.tensor_util.slice_view import slice_view
@@ -136,6 +136,7 @@ def symbolic_transform_forward(
     task_prompt: str = "",
     topk: int = 16,
     llm_method: str = "raw_llm_api",
+    llm_env: Optional[Dict[str, str]] = None,
 ) -> Tuple[torch.Tensor, Any]:
     """
     Forward pass of the symbolic transform: translate input to output using
@@ -171,7 +172,7 @@ def symbolic_transform_forward(
     output = todo_tensor_like(input)
 
     # Generate input query keywords
-    input_query = get_query_tensor(input, query_prompt=query_prompt, task_prompt=task_prompt, llm_method=llm_method)
+    input_query = get_query_tensor(input, query_prompt=query_prompt, task_prompt=task_prompt, llm_method=llm_method, llm_env=llm_env)
 
     # Phase 1: Build requests per scalar element
     coords_list = _scalar_slice_indices(input.size())
@@ -229,7 +230,7 @@ def symbolic_transform_forward(
     # Phase 2: Dispatch to TaskHandler
     all_tasks = _build_nested_result(flat_tasks, list(input.size()))
 
-    TaskHandler()(all_tasks, llm_method)
+    TaskHandler()(all_tasks, llm_method, llm_env=llm_env)
 
     # Phase 3: Copy back results and cleanup
     for output_dir, scalar_output_view in flat_copyback_info:

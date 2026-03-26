@@ -40,6 +40,7 @@ symbolic_transform_forward :=
     <- $task_prompt str # default ""
     <- $topk int # default 16
     <- $llm_method ("coding_agent" | "raw_llm_api") # default raw_llm_api
+    <- $llm_env dict[str, str] # default None
     # inline
     <- ($output
         <- Import[experience/symbolic_tensor/tensor_util/todo_tensor_like.viba]
@@ -53,7 +54,8 @@ symbolic_transform_forward :=
         <- $input
         <- $query_prompt
         <- $task_prompt
-        <- $llm_method)
+        <- $llm_method
+        <- $llm_env)
     <- (NestList[$scalar_input_view Symbolic[torch.Tensor]] <- NestList[$slice_view] <- $input)
     <- ($batch_input_file_content str <- $scalar_input_view)
     <- ($select_experience_query_indexes list[torch.Tensor[int]]
@@ -89,7 +91,7 @@ symbolic_transform_forward :=
         <- f"{workspace_dir}/mutable_output_dir")
     <- ($agent_task AgentTask <- $workspace_dir <- "mutable_output_dir" <- $prompt)
     <- ($all_tasks <- NestList[$agent_task])
-    <- (void <- Import[experience/llm_client/task_handler.viba] <- $all_tasks <- $llm_method)
+    <- (void <- Import[experience/llm_client/task_handler.viba] <- $all_tasks <- $llm_method <- $llm_env)
 
     # copy back: LLM Write tool replaces symlinks with regular files,
     # so read from view files and write back to tensor storage.

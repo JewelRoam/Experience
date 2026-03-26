@@ -26,6 +26,7 @@ get_query_tensor :=
     <- $query_prompt QueryPromptCallable # default None
     <- $task_prompt str # default ""
     <- $llm_method ("coding_agent" | "raw_llm_api")
+    <- $llm_env dict[str, str] # default None
     # inline
     <- $slice_tensor Import[experience/symbolic_tensor/tensor_util/slice_tensor.viba]
     <- $todo_like Import[experience/symbolic_tensor/tensor_util/todo_tensor_like.viba]
@@ -41,7 +42,7 @@ get_query_tensor :=
         <- f"{tmp_dir}/mutable_output_dir")
     <- ($agent_task AgentTask <- $tmp_dir <- "mutable_output_dir" <- $prompt)
     <- ($all_tasks <- sole_element_list <- $agent_task)
-    <- (void <- Import[experience/llm_client/task_handler.viba] <- $all_tasks <- $llm_method)
+    <- (void <- Import[experience/llm_client/task_handler.viba] <- $all_tasks <- $llm_method <- $llm_env)
     # copy back: LLM Write tool replaces symlinks with regular files,
     # so read from view files and write back to tensor storage.
     <- (void <- copy_back_to_storage_view <- f"{tmp_dir}/mutable_output_dir" <- $output)

@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 import itertools
 import torch
-from typing import Callable, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 
 from experience.symbolic_tensor.function import symbolic_grad_registry
 from experience.symbolic_tensor.tensor_util.slice_view import slice_view
@@ -75,11 +75,13 @@ class SymbolicSGD(torch.optim.Optimizer):
     Args:
         params: Iterable of parameters to optimize.
         lr: Learning rate (default: 0.01).
+        llm_env: Environment variable dict for LLM client. None uses os.environ defaults.
     """
 
-    def __init__(self, params, lr: float = 0.01):
+    def __init__(self, params, lr: float = 0.01, llm_env: Optional[Dict[str, str]] = None):
         defaults = dict(lr=lr)
         super().__init__(params, defaults)
+        self.llm_env = llm_env
 
     @torch.no_grad()
     def step(self, closure: Optional[Callable] = None):
@@ -168,7 +170,7 @@ class SymbolicSGD(torch.optim.Optimizer):
         kv_param = slice_view(param, kv_points)
 
         # Step 1: Run get_query_tensor on kv_param to generate LLM keywords
-        kv_queries = get_query_tensor(kv_param, llm_method="raw_llm_api")
+        kv_queries = get_query_tensor(kv_param, llm_method="raw_llm_api", llm_env=self.llm_env)
 
         # Step 2: Get file paths from kv_queries (LLM-generated keywords)
         kv_query_file_paths = get_nested_list_file_pathes(kv_queries)

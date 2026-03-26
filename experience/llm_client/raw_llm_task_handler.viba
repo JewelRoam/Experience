@@ -5,6 +5,7 @@ RawLlmTaskHandler :=
     # __call__
     void
     <- NestedList[$agent_task AgentTask]
+    <- $llm_env dict[str, str] # default None
     # __init__
     <- ()
     # inline
@@ -23,7 +24,8 @@ RawLlmTaskHandler :=
     <- $async_do_for_one_batch (
         str
         <- $raw_llm_query
-        <- $raw_llm_prompt)
+        <- $raw_llm_prompt
+        <- $llm_env)
     <- (NestList[OutputFilesList[$output_file_content str]] 
         <- async_gather_run 
         <- NestList[OutputFilesList[$async_do_for_one_batch]])

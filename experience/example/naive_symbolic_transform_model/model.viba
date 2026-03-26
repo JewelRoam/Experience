@@ -14,6 +14,7 @@ __init__ :=
     <- $grad_exp_value_prompt BackwardPromptCallable # default None
     <- $task_prompt str # default ""
     <- $topk int # default 16
+    <- $llm_env dict[str, str] # default None
     # inline
     <- Import[experience/symbolic_tensor/module/symbolic_transform.py]
 
