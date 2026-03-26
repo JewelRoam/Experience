@@ -69,7 +69,6 @@ if __name__ == "__main__":
         print("\n  === Iteration 1: Forward ===")
         output1, selected_indexes1 = symbolic_transform_forward(
             input_tensor, experience_tensor,
-            forward_prompt="Translate the English text to French.",
             topk=2,
         )
         output1_text = read_storage(output1, 0)
@@ -88,7 +87,6 @@ if __name__ == "__main__":
         grad_input, grad_experience = symbolic_transform_backward(
             grad_output, input_tensor, output1, experience_tensor,
             selected_experience_qkv_indexes_list=selected_indexes1,
-            forward_prompt="Translate the English text to French.",
             topk=2,
         )
         experience_tensor.grad = grad_experience
@@ -113,7 +111,6 @@ if __name__ == "__main__":
         experience_tensor.data.fill_(1.0)
         output2, selected_indexes2 = symbolic_transform_forward(
             input_tensor, experience_tensor,
-            forward_prompt="Translate the English text to French.",
             topk=2,
         )
         output2_text = read_storage(output2, 0)
@@ -151,7 +148,6 @@ if __name__ == "__main__":
         print("\n  === Iteration 1: Forward ===")
         output1, selected_indexes1 = symbolic_transform_forward(
             input_tensor, experience_tensor,
-            forward_prompt="Translate the English text to French.",
             topk=2,
         )
         output1_texts = [read_storage(output1, i) for i in range(output1.numel())]
@@ -170,7 +166,6 @@ if __name__ == "__main__":
         grad_input, grad_experience = symbolic_transform_backward(
             grad_output, input_tensor, output1, experience_tensor,
             selected_experience_qkv_indexes_list=selected_indexes1,
-            forward_prompt="Translate the English text to French.",
             topk=2,
         )
         experience_tensor.grad = grad_experience
@@ -196,7 +191,6 @@ if __name__ == "__main__":
         experience_tensor.data.fill_(1.0)
         output2, selected_indexes2 = symbolic_transform_forward(
             input_tensor, experience_tensor,
-            forward_prompt="Translate the English text to French.",
             topk=2,
         )
         output2_texts = [read_storage(output2, i) for i in range(output2.numel())]

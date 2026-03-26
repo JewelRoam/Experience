@@ -8,7 +8,7 @@ from experience.symbolic_tensor.tensor_util.make_tensor import make_tensor
 from experience.symbolic_tensor.function.symbolic_transform_forward import symbolic_transform_forward
 
 
-def run_benchmark(input_data, experience_data, forward_prompt, topk, method):
+def run_benchmark(input_data, experience_data, topk, method):
     """Run a single benchmark, return (time_seconds, outputs)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         input_tensor = make_tensor(input_data, tmpdir)
@@ -17,7 +17,6 @@ def run_benchmark(input_data, experience_data, forward_prompt, topk, method):
         t0 = time.time()
         output, selected_indexes = symbolic_transform_forward(
             input_tensor, experience_tensor,
-            forward_prompt=forward_prompt,
             topk=topk,
             method=method,
         )
@@ -53,7 +52,6 @@ if __name__ == "__main__":
         ["farewell\ngoodbye", "Goodbye in English", "Au revoir en francais"],
         ["counting\nnumbers", "One two three in English", "Un deux trois en francais"],
     ]
-    forward_prompt = "Translate the English text to French."
     topk = 2
     methods = ["raw_llm_api", "coding_agent"]
 
@@ -80,7 +78,7 @@ if __name__ == "__main__":
         for method in methods:
             print(f"\n  --- {method} ---")
             elapsed, outputs = run_benchmark(
-                input_data, experience_data, forward_prompt, topk, method
+                input_data, experience_data, topk, method
             )
             results[scale_name][method] = (elapsed, outputs)
             for i, out in enumerate(outputs):

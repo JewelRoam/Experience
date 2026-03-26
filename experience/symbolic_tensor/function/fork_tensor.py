@@ -3,7 +3,7 @@ import itertools
 import shutil
 import tempfile
 import torch
-from typing import Any, List, Tuple, Union
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 from experience.symbolic_tensor.tensor_util.todo_tensor_like import todo_tensor_like
 from experience.symbolic_tensor.tensor_util.assign_tensor import assign_tensor
@@ -41,11 +41,36 @@ def fork_tensor_forward(
     return [slice_view(input, slices) for _ in range(num_outputs)]
 
 
+def default_prompt_for_fork_grad_input(
+    workspace_dir: str,
+    const_grad_outputs_view: str,
+    const_input_view: str,
+    const_outputs_view: str,
+    mutable_grad_input_dir: str,
+) -> str:
+    """Default prompt for fork_tensor backward pass (merging gradients)."""
+    return (
+        "You are a symbolic gradient collector for backward pass.\n\n"
+        "During forward pass, the input was replicated to multi identical outputs.\n"
+        "Now given the output gradients (how output should change), merge gradient for\n"
+        "input.\n\n"
+        "Context (read-only):\n"
+        f"- Output gradients (text diff): \"{const_grad_outputs_view}\"\n"
+        f"- Original input: \"{const_input_view}\"\n"
+        f"- Original outputs: \"{const_outputs_view}\"\n\n"
+        "Compute and write:\n"
+        f"1. Input gradient in \"{mutable_grad_input_dir}\":\n"
+        "   How should the input text change to improve the output?\n"
+        f"2. File \"{mutable_grad_input_dir}/<xxx>/data\" must be a better version of \"{const_input_view}/<xxx>/data\"\n\n"
+        "Replace all TODO with source semantic files.\n"
+    )
+
+
 def fork_tensor_backward(
     grad_outputs: List[torch.Tensor],
     input: torch.Tensor,
     outputs: List[torch.Tensor],
-    forward_prompt: str = "",
+    grad_input_prompt: Optional[Callable[..., str]] = None,
     llm_method: str = "raw_llm_api",
 ) -> Union[torch.Tensor, None]:
     """Backward pass of fork_tensor: merge multiple grad_outputs into one grad_input.
@@ -58,7 +83,7 @@ def fork_tensor_backward(
         grad_outputs: List of gradient tensors (one per forked output).
         input: Original input tensor (saved from forward ctx).
         outputs: Original output tensors (saved from forward ctx).
-        forward_prompt: Optional prompt guidance.
+        grad_input_prompt: Callable that builds the prompt. None uses default.
         llm_method: LLM backend to use.
 
     Returns:
@@ -106,21 +131,9 @@ def fork_tensor_backward(
         outputs_view_dir = os.path.join(workspace_dir, "const_outputs_view")
         grad_input_dir = os.path.join(workspace_dir, "mutable_grad_input_dir")
 
-        prompt = (
-            "You are a symbolic gradient collector for backward pass.\n\n"
-            f"{forward_prompt}\n\n"
-            "During forward pass, the input was replicated to multi identical outputs.\n"
-            "Now given the output gradients (how output should change), merge gradient for\n"
-            "input.\n\n"
-            "Context (read-only):\n"
-            f"- Output gradients (text diff): \"{grad_outputs_dir}\"\n"
-            f"- Original input: \"{input_view_dir}\"\n"
-            f"- Original outputs: \"{outputs_view_dir}\"\n\n"
-            "Compute and write:\n"
-            f"1. Input gradient in \"{grad_input_dir}\":\n"
-            "   How should the input text change to improve the output?\n"
-            f"2. File \"{grad_input_dir}/<xxx>/data\" must be a better version of \"{input_view_dir}/<xxx>/data\"\n\n"
-            "Replace all TODO with source semantic files.\n"
+        prompt = (grad_input_prompt or default_prompt_for_fork_grad_input)(
+            workspace_dir, grad_outputs_dir, input_view_dir,
+            outputs_view_dir, grad_input_dir,
         )
 
         agent_task = AgentTask(
@@ -151,7 +164,7 @@ class ForkTensor(torch.autograd.Function):
         ctx,
         input: torch.Tensor,
         num_outputs: int = 2,
-        forward_prompt: str = "",
+        grad_input_prompt: Optional[Callable[..., str]] = None,
         llm_method: str = "raw_llm_api",
     ) -> Tuple[torch.Tensor, ...]:
         outputs = fork_tensor_forward(input, num_outputs)
@@ -173,7 +186,7 @@ class ForkTensor(torch.autograd.Function):
             }
         # Save non-tensor state
         ctx.num_outputs = num_outputs
-        ctx.forward_prompt = forward_prompt
+        ctx.grad_input_prompt = grad_input_prompt
         ctx.llm_method = llm_method
 
         return tuple(outputs)
@@ -209,7 +222,7 @@ class ForkTensor(torch.autograd.Function):
             resolved_grad_outputs,
             input,
             outputs,
-            forward_prompt=ctx.forward_prompt,
+            grad_input_prompt=ctx.grad_input_prompt,
             llm_method=ctx.llm_method,
         )
 
@@ -217,7 +230,7 @@ class ForkTensor(torch.autograd.Function):
         if grad_input is not None:
             symbolic_grad_registry.register(input.st_tensor_uid, grad_input)
 
-        # Return grads for (input, num_outputs, forward_prompt, llm_method)
+        # Return grads for (input, num_outputs, grad_input_prompt, llm_method)
         return grad_input, None, None, None
 
 
@@ -306,7 +319,6 @@ if __name__ == "__main__":
 
         grad_input = fork_tensor_backward(
             grad_outs, t, forks,
-            forward_prompt="test",
             llm_method="raw_llm_api",
         )
 

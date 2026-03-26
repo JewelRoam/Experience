@@ -8,11 +8,42 @@ fork_tensor_forward :=
     <- (list[$i int] <- range <- $num_outputs)
     <- ($ret_elem <- $slice_view <- $input <- $slices <- $i)
 
+ForkGradInputPromptCallable := $func ($ret str <- $workspace_dir str <- $const_grad_outputs_view str <- $const_input_view str <- $const_outputs_view str <- $mutable_grad_input_dir str)
+
+default_prompt_for_fork_grad_input :=
+    $prompt str
+    <- $workspace_dir str
+    <- $const_grad_outputs_view str
+    <- $const_input_view str
+    <- $const_outputs_view str
+    <- $mutable_grad_input_dir str
+    # inline
+    <- ($prompt <- '''
+        You are a symbolic gradient collector for backward pass.
+
+        During forward pass, the input was replicated to multi identical outputs.
+        Now given the output gradients (how output should change), merge gradient for
+        input.
+
+        Context (read-only):
+        - Output gradients (text diff): f"{const_grad_outputs_view}"
+        - Original input: f"{const_input_view}"
+        - Original outputs: f"{const_outputs_view}"
+
+        Compute and write:
+        1. Input gradient in f"{mutable_grad_input_dir}":
+           How should the input text change to improve the output?
+        2. File f"{mutable_grad_input_dir}/<xxx>/data" must be a better version of f"{const_input_view}/<xxx>/data"
+
+        Replace all TODO with source semantic files.
+    ''')
+
 fork_tensor_backward :=
     $grad_input Symbolic[torch.Tensor]
     <- $grad_outputs list[Symbolic[torch.Tensor]]
     <- $input Symbolic[torch.Tensor]
     <- $outputs list[Symbolic[torch.Tensor]]
+    <- $grad_input_prompt ForkGradInputPromptCallable # default None
     <- $llm_method ("coding_agent" | "raw_llm_api") # default raw_llm_api
     # inline
     <- EarlyReturn[IfNot[$input.requires_grad], $grad_input <- None]
@@ -37,27 +68,12 @@ fork_tensor_backward :=
     <- (void <- $dump_view <- $scalar_input <- f"{workspace_dir}/const_input_view")
     <- (void <- $dump_view <- $scalar_outputs <- f"{workspace_dir}/const_outputs_view")
     <- (void <- $dump_view <- $scalar_grad_input_value <- f"{workspace_dir}/mutable_grad_input_dir" <- If[$input.requires_grad])
-    <- ($prompt <- '''
-        You are a symbolic gradient collector for backward pass.
-
-        f"{forward_prompt}"
-
-        During forward pass, the input was replicated to multi identical outputs.
-        Now given the output gradients (how output should change), merge gradient for
-        input.
-
-        Context (read-only):
-        - Output gradients (text diff): f"{workspace_dir}/const_grad_outputs_view"
-        - Original input: f"{workspace_dir}/const_input_view"
-        - Original outputs: f"{workspace_dir}/const_outputs_view"
-
-        Compute and write:
-        1. Input gradient in f"{workspace_dir}/mutable_grad_input_dir":
-           How should the input text change to improve the output?
-        2. File f"{workspace_dir}/mutable_grad_input_dir/<xxx>/data" must be a better version of f"{workspace_dir}/const_input_view/<xxx>/data"
-
-        Replace all TODO with source semantic files.
-    ''')
+    <- ($prompt <- ($grad_input_prompt | default_prompt_for_fork_grad_input)
+        <- $workspace_dir
+        <- f"{workspace_dir}/const_grad_outputs_view"
+        <- f"{workspace_dir}/const_input_view"
+        <- f"{workspace_dir}/const_outputs_view"
+        <- f"{workspace_dir}/mutable_grad_input_dir")
     <- ($agent_task AgentTask <- $workspace_dir <- "mutable_grad_input_dir" <- $prompt)
     <- ($all_tasks <- NestedList[$agent_task])
     <- (void <- Import[experience/llm_client/task_handler.viba] <- $all_tasks <- $llm_method)
@@ -66,7 +82,12 @@ fork_tensor_backward :=
         <- $scalar_grad_input_value)
     <- (void <- $scalar_grad_input_view.st_assign <- $diff)
 
-SymbolicTransform := torch.autograd.Function[
+ForkTensor := torch.autograd.Function[
     fork_tensor_forward,
     fork_tensor_backward,
+    # ctx saves grad_input_prompt callable for backward
+    $ctx.grad_input_prompt ForkGradInputPromptCallable # default None
+    $ctx.llm_method str
 ]
+
+fork_tensor := ForkTensor.apply

@@ -1,7 +1,4 @@
 
-# Prompt is only for comprehension. do not generate
-Prompt := str
-
 # SymbolicSGD extends torch.optim.Optimizer
 # Two-channel update: numeric coefficient SGD + symbolic text diff via LLM
 #
