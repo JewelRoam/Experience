@@ -4,7 +4,7 @@ import tempfile
 import torch
 
 from experience.symbolic_tensor.tensor_util.make_tensor import make_tensor
-from experience.symbolic_tensor.optimizer.symbolic_sgd import SymbolicSGD
+from experience.symbolic_tensor.optimizer.st_sgd import StSGD
 from experience.symbolic_tensor.function.st_matmul_forward import st_matmul_forward
 from experience.symbolic_tensor.function.st_matmul_backward import st_matmul_backward
 
@@ -34,7 +34,7 @@ if __name__ == "__main__":
             os.environ[key] = val
     os.environ.pop("CLAUDECODE", None)
 
-    print("Running test_gain_symbolic_sgd...\n")
+    print("Running test_gain_st_sgd...\n")
 
     def run_test(name: str, condition: bool, expected=None, actual=None):
         if condition:
@@ -63,7 +63,7 @@ if __name__ == "__main__":
         experience_tensor = make_tensor(experience_data, tmpdir)
         experience_tensor.requires_grad_(True)
 
-        optimizer = SymbolicSGD([experience_tensor], lr=1.0)
+        optimizer = StSGD([experience_tensor], lr=1.0)
 
         # ── First forward ──
         print("\n  === Iteration 1: Forward ===")
@@ -142,7 +142,7 @@ if __name__ == "__main__":
         experience_tensor = make_tensor(experience_data, tmpdir)
         experience_tensor.requires_grad_(True)
 
-        optimizer = SymbolicSGD([experience_tensor], lr=1.0)
+        optimizer = StSGD([experience_tensor], lr=1.0)
 
         # ── First forward ──
         print("\n  === Iteration 1: Forward ===")

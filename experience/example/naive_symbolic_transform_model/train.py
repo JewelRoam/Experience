@@ -14,7 +14,7 @@ import torch
 from experience.symbolic_tensor.tensor_util.make_tensor import make_tensor
 from experience.symbolic_tensor.tensor_util.slice_view import slice_view
 from experience.symbolic_tensor.function.get_edit_distance_ratio import get_edit_distance_ratio
-from experience.symbolic_tensor.optimizer.symbolic_sgd import SymbolicSGD
+from experience.symbolic_tensor.optimizer.st_sgd import StSGD
 from experience.example.naive_symbolic_transform_model.model import NaiveModel
 from experience.symbolic_tensor.function import symbolic_grad_registry
 
@@ -98,7 +98,7 @@ def auto_train(
         num_experience: Number of experience rows (each row is [query, key, value]).
         topk: Number of top experience entries to select per input.
         forward_prompt: Callable that builds the forward prompt. None uses default.
-        lr: Learning rate for SymbolicSGD.
+        lr: Learning rate for StSGD.
         llm_model: LLM model name override. None uses os.environ default.
         retrieval_method: Callable(query_file_content, key_file_content) -> float.
             None uses default Jaccard similarity.
@@ -149,7 +149,7 @@ def auto_train(
             llm_env=llm_env,
         )
         model.load_experience(experience_tensor)
-        optimizer = SymbolicSGD(model.parameters(), lr=lr)
+        optimizer = StSGD(model.parameters(), lr=lr)
 
         log(f"\nExperience: {list(experience_tensor.shape)}")
         log(f"Input:      {list(input_tensor.shape)}")

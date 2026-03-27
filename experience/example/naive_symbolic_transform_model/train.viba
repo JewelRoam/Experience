@@ -15,7 +15,7 @@ auto_train :=
     <- Import[experience/example/naive_symbolic_transform_model/model.py].NaiveModel
     <- $task_prompt "Translate Python To Viba"
     <- Import[experience/symbolic_tensor/function/get_edit_distance_ratio.py]
-    <- Import[experience/symbolic_tensor/optimizer/symbolic_sgd.py]
+    <- Import[experience/symbolic_tensor/optimizer/st_sgd.py]
     # NaiveModel(forward_prompt, task_prompt, topk, retrieval_method, llm_env)
     # llm_env built from llm_model if not None
     # training loop with batch slicing

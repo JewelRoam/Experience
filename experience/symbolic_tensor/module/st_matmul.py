@@ -178,13 +178,13 @@ if __name__ == "__main__":
 
     # Test 4: Works with optimizer
     print("Test 4: Compatible with optimizer")
-    from experience.symbolic_tensor.optimizer.symbolic_sgd import SymbolicSGD
+    from experience.symbolic_tensor.optimizer.st_sgd import StSGD
 
     model = StMatmulModule(
         experience_shape=[2, 3],
         topk=1,
     )
-    optimizer = SymbolicSGD(model.parameters(), lr=1.0)
+    optimizer = StSGD(model.parameters(), lr=1.0)
     run_test("Optimizer accepts model.parameters()", len(optimizer.param_groups) == 1)
     run_test("Optimizer has 1 param", len(optimizer.param_groups[0]["params"]) == 1)
 

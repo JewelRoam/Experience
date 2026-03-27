@@ -1,3 +1,3 @@
-from experience.symbolic_tensor.optimizer.symbolic_sgd import SymbolicSGD
+from experience.symbolic_tensor.optimizer.st_sgd import StSGD
 
-__all__ = ["SymbolicSGD"]
+__all__ = ["StSGD"]

@@ -1,18 +1,18 @@
 
-# SymbolicSGD extends torch.optim.Optimizer
+# StSGD extends torch.optim.Optimizer
 # Two-channel update: numeric coefficient SGD + symbolic text diff via LLM
 #
 # Usage:
-#   optimizer = SymbolicSGD([experience_tensor], lr=0.01)
+#   optimizer = StSGD([experience_tensor], lr=0.01)
 #   optimizer.zero_grad()
 #   ... forward / backward ...
 #   optimizer.step()
 
-SymbolicSGD := torch.optim.Optimizer
+StSGD := torch.optim.Optimizer
 
 __init__ :=
     void
-    <- $self SymbolicSGD
+    <- $self StSGD
     <- $params ParamsT
     <- $lr float # default 0.01
     <- $llm_env dict[str, str] # default None
@@ -21,7 +21,7 @@ __init__ :=
 
 step :=
     void
-    <- $self SymbolicSGD
+    <- $self StSGD
     <- $closure Optional[Callable] # default None
     # inline
     <- $slice_view Import[experience/symbolic_tensor/tensor_util/slice_view.viba]
@@ -62,7 +62,7 @@ step :=
 
 zero_grad :=
     void
-    <- $self SymbolicSGD
+    <- $self StSGD
     <- $set_to_none bool # default True
     # inline
     # set_to_none=True: param.grad = None (standard torch, next backward creates fresh grad)

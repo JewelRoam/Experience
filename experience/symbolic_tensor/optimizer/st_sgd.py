@@ -63,7 +63,7 @@ def _get_nonzero_points(grad: torch.Tensor) -> List[torch.Tensor]:
     return list(nz)
 
 
-class SymbolicSGD(torch.optim.Optimizer):
+class StSGD(torch.optim.Optimizer):
     """
     Symbolic SGD optimizer. Two-channel update:
       a) Numeric (coefficient): param.data = (1 - lr) * param.data + lr * grad.data
@@ -242,7 +242,7 @@ if __name__ == "__main__":
             os.environ[key] = val
     os.environ.pop("CLAUDECODE", None)
 
-    print("Running SymbolicSGD tests...\n")
+    print("Running StSGD tests...\n")
 
     def run_test(name: str, condition: bool, expected=None, actual=None):
         if condition:
@@ -270,7 +270,7 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmpdir:
         exp = make_tensor([["q", "k", "v"]], tmpdir)
         exp.requires_grad_(True)
-        opt = SymbolicSGD([exp], lr=0.1)
+        opt = StSGD([exp], lr=0.1)
         run_test("param_groups has 1 group", len(opt.param_groups) == 1)
         run_test("lr is 0.1", opt.param_groups[0]["lr"] == 0.1)
 
@@ -279,7 +279,7 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmpdir:
         exp = make_tensor([["q", "k", "v"]], tmpdir)
         exp.requires_grad_(True)
-        opt = SymbolicSGD([exp], lr=0.5)
+        opt = StSGD([exp], lr=0.5)
 
         # Manually set a plain gradient (no st_ attrs)
         exp.grad = torch.ones_like(exp) * 2.0
@@ -296,7 +296,7 @@ if __name__ == "__main__":
         exp = make_tensor([["q", "k", "v"]], tmpdir)
         exp.requires_grad_(True)
         exp.grad = torch.ones_like(exp)
-        opt = SymbolicSGD([exp], lr=0.1)
+        opt = StSGD([exp], lr=0.1)
         opt.zero_grad(set_to_none=True)
         run_test("grad is None", exp.grad is None)
 
@@ -309,7 +309,7 @@ if __name__ == "__main__":
         grad.data.fill_(1.0)
         exp.grad = grad
         run_test("grad text before reset", read_storage(exp.grad, 0) == "grad_q")
-        opt = SymbolicSGD([exp], lr=0.1)
+        opt = StSGD([exp], lr=0.1)
         opt.zero_grad(set_to_none=False)
         run_test("grad coeff zeroed", exp.grad.data[0, 0].item() == 0.0)
         run_test("grad text is TODO", read_storage(exp.grad, 0) == "TODO")
@@ -343,7 +343,7 @@ if __name__ == "__main__":
         grad.data[0, 2] = 1.0
         exp.grad = grad
 
-        opt = SymbolicSGD([exp], lr=1.0)
+        opt = StSGD([exp], lr=1.0)
         opt.step()
 
         stats = opt.get_last_step_stats()
@@ -372,7 +372,7 @@ if __name__ == "__main__":
         grad.data[0, 2] = 1.0
         exp.grad = grad
 
-        opt = SymbolicSGD([exp], lr=0.5)
+        opt = StSGD([exp], lr=0.5)
         opt.step()
 
         stats = opt.get_last_step_stats()
@@ -416,7 +416,7 @@ if __name__ == "__main__":
         grad.data[1, 2] = 1.0
         exp.grad = grad
 
-        opt = SymbolicSGD([exp], lr=1.0)
+        opt = StSGD([exp], lr=1.0)
         opt.step()
 
         stats = opt.get_last_step_stats()
