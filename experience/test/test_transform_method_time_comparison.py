@@ -8,7 +8,7 @@ from experience.symbolic_tensor.tensor_util.make_tensor import make_tensor
 from experience.symbolic_tensor.function.st_matmul_forward import st_matmul_forward
 
 
-def run_benchmark(input_data, experience_data, topk, method):
+def run_benchmark(input_data, experience_data, topk, llm_method):
     """Run a single benchmark, return (time_seconds, outputs)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         input_tensor = make_tensor(input_data, tmpdir)
@@ -18,7 +18,7 @@ def run_benchmark(input_data, experience_data, topk, method):
         output, selected_indexes = st_matmul_forward(
             input_tensor, experience_tensor,
             topk=topk,
-            method=method,
+            llm_method=llm_method,
         )
         t1 = time.time()
         elapsed = t1 - t0
