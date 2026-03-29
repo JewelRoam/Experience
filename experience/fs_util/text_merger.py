@@ -1,6 +1,6 @@
 """TextMerger: pack/unpack a list of (index, coefficient, content) frames into/from a single string.
 
-Used by st_reduce_forward to merge multiple symbolic tensor elements along an axis
+Used by merge_forward to merge multiple symbolic tensor elements along an axis
 into a single text representation.
 """
 

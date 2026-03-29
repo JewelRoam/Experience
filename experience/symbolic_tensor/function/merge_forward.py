@@ -36,7 +36,7 @@ def _write_storage(tensor: torch.Tensor, flat_index: int, content: str) -> None:
         f.write(content)
 
 
-def st_reduce_forward(
+def merge_forward(
     input: torch.Tensor,
     axis: int = -1,
     text_merger: Optional[Type] = None,
@@ -131,7 +131,7 @@ if __name__ == "__main__":
     from experience.symbolic_tensor.tensor_util.make_tensor import make_tensor
     from experience.fs_util.text_merger import TextMerger, kFrameMarker
 
-    print("Running st_reduce_forward tests...\n")
+    print("Running merge_forward tests...\n")
 
     def run_test(name: str, condition: bool, expected=None, actual=None):
         if condition:
@@ -154,7 +154,7 @@ if __name__ == "__main__":
     print("Test 1: Reduce 1D -> scalar")
     with tempfile.TemporaryDirectory() as tmpdir:
         inp = make_tensor(["alpha", "beta", "gamma"], tmpdir)
-        result = st_reduce_forward(inp, axis=0)
+        result = merge_forward(inp, axis=0)
         run_test("shape is scalar-like", result.numel() == 1)
         content = read_out(result, 0)
         run_test("content not None", content is not None)
@@ -170,7 +170,7 @@ if __name__ == "__main__":
     print("Test 2: Reduce 2D along last axis")
     with tempfile.TemporaryDirectory() as tmpdir:
         inp = make_tensor([["a", "b", "c"], ["d", "e", "f"]], tmpdir)
-        result = st_reduce_forward(inp, axis=-1)
+        result = merge_forward(inp, axis=-1)
         run_test("shape [2]", list(result.shape) == [2])
         # Row 0: a, b, c merged
         content0 = read_out(result, 0)
@@ -188,7 +188,7 @@ if __name__ == "__main__":
     print("Test 3: Reduce 2D along first axis")
     with tempfile.TemporaryDirectory() as tmpdir:
         inp = make_tensor([["a", "b", "c"], ["d", "e", "f"]], tmpdir)
-        result = st_reduce_forward(inp, axis=0)
+        result = merge_forward(inp, axis=0)
         run_test("shape [3]", list(result.shape) == [3])
         # Col 0: a, d merged
         content0 = read_out(result, 0)
@@ -205,7 +205,7 @@ if __name__ == "__main__":
             [["d0", "d1"], ["e0", "e1"], ["f0", "f1"]],
         ]
         inp = make_tensor(data, tmpdir)
-        result = st_reduce_forward(inp, axis=1)
+        result = merge_forward(inp, axis=1)
         run_test("shape [2, 2]", list(result.shape) == [2, 2])
         # result[0, 0] = merge of inp[0, :, 0] = [a0, b0, c0]
         content00 = read_out(result, 0)
@@ -220,14 +220,14 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmpdir:
         inp = make_tensor(["x", "y", "z"], tmpdir)
         # Coefficients are all 1.0 from make_tensor
-        result = st_reduce_forward(inp, axis=0)
+        result = merge_forward(inp, axis=0)
         run_test("coefficient sum = 3.0", abs(result.data.flatten()[0].item() - 3.0) < 1e-5)
 
     # Test 6: Partial content (some None elements)
     print("Test 6: Partial content")
     with tempfile.TemporaryDirectory() as tmpdir:
         inp = make_tensor(["hello", None, "world"], tmpdir)
-        result = st_reduce_forward(inp, axis=0)
+        result = merge_forward(inp, axis=0)
         content = read_out(result, 0)
         frames = TextMerger.unpack(content)
         run_test("2 frames (skip None)", len(frames) == 2)
@@ -238,7 +238,7 @@ if __name__ == "__main__":
     print("Test 7: Single element axis")
     with tempfile.TemporaryDirectory() as tmpdir:
         inp = make_tensor([["only"]], tmpdir)  # (1, 1)
-        result = st_reduce_forward(inp, axis=-1)
+        result = merge_forward(inp, axis=-1)
         run_test("shape [1]", list(result.shape) == [1])
         content = read_out(result, 0)
         frames = TextMerger.unpack(content)
@@ -249,7 +249,7 @@ if __name__ == "__main__":
     print("Test 8: Default axis=-1")
     with tempfile.TemporaryDirectory() as tmpdir:
         inp = make_tensor([["a", "b"], ["c", "d"]], tmpdir)
-        result = st_reduce_forward(inp)
+        result = merge_forward(inp)
         run_test("shape [2]", list(result.shape) == [2])
 
     # Test 9: Skip zero-coefficient elements
@@ -258,7 +258,7 @@ if __name__ == "__main__":
         inp = make_tensor(["keep", "skip", "also_keep"], tmpdir)
         # Set middle element coefficient to zero
         inp.data[1] = 0.0
-        result = st_reduce_forward(inp, axis=0)
+        result = merge_forward(inp, axis=0)
         content = read_out(result, 0)
         frames = TextMerger.unpack(content)
         run_test("2 frames (skip zero coeff)", len(frames) == 2)
@@ -285,7 +285,7 @@ if __name__ == "__main__":
 
     with tempfile.TemporaryDirectory() as tmpdir:
         inp = make_tensor(["x", "y"], tmpdir)
-        result = st_reduce_forward(inp, axis=0, text_merger=SimpleMerger)
+        result = merge_forward(inp, axis=0, text_merger=SimpleMerger)
         content = read_out(result, 0)
         run_test("custom format", content == "0:x | 1:y")
 

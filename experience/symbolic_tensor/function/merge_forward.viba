@@ -1,7 +1,7 @@
 
 TestMerger := Import[experience/fs_util/text_merger.viba]
 
-st_reduce_forward :=
+merge_forward :=
     Symbolic[torch.Tensor]
     <- $input Symbolic[torch.Tensor]
     <- $axis int # default -1, meaning last dim. no tuple supported.
