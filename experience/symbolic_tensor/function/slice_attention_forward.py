@@ -21,7 +21,15 @@ def slice_attention_forward(
     Returns:
         Symbolic tensor of shape (batch, seq_len, seq_len).
     """
+    # Assert shape constraints
+    assert input.dim() == 2, f"input must be 2D (batch, seq_len), got {input.dim()}D"
     batch, seq_len = input.shape
+    assert attention_mask.shape == (batch, seq_len, seq_len), (
+        f"attention_mask shape {tuple(attention_mask.shape)} != expected ({batch}, {seq_len}, {seq_len})"
+    )
+    assert attention_mask.dtype == torch.bool, (
+        f"attention_mask dtype must be bool, got {attention_mask.dtype}"
+    )
 
     # 3D output: (batch, seq_len, seq_len)
     final_output = make_none_tensor([batch, seq_len, seq_len], input.st_relative_to)
@@ -180,7 +188,7 @@ if __name__ == "__main__":
         # Padded token row is all zero
         run_test("row 2 all zero", (result[0, 2] == 0).all().item())
 
-    # Test 7: Values marked correctly
+    # Test 7: Tensor values
     print("Test 7: Tensor values")
     with tempfile.TemporaryDirectory() as tmpdir:
         inp = make_tensor([["a", "b"]], tmpdir)
@@ -189,5 +197,29 @@ if __name__ == "__main__":
         result = slice_attention_forward(inp, mask)
         run_test("attended positions are 1.0", result[mask].eq(1.0).all().item())
         run_test("non-attended positions are 0.0", result[~mask].eq(0.0).all().item())
+
+    # Test 8: Shape constraint assertions
+    print("Test 8: Shape assertions")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        inp = make_tensor([["a", "b"]], tmpdir)
+        # Wrong mask shape
+        try:
+            slice_attention_forward(inp, torch.ones(1, 3, 3, dtype=torch.bool))
+            run_test("mask shape mismatch raises", False)
+        except AssertionError:
+            run_test("mask shape mismatch raises", True)
+        # Wrong input dim
+        try:
+            inp1d = make_tensor(["a", "b"], tmpdir)
+            slice_attention_forward(inp1d, torch.ones(2, 2, dtype=torch.bool))
+            run_test("1D input raises", False)
+        except AssertionError:
+            run_test("1D input raises", True)
+        # Wrong dtype
+        try:
+            slice_attention_forward(inp, torch.ones(1, 2, 2))
+            run_test("non-bool mask raises", False)
+        except AssertionError:
+            run_test("non-bool mask raises", True)
 
     print("\nAll tests completed.")
