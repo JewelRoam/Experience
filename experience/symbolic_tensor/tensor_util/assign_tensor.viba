@@ -6,6 +6,7 @@ assign_tensor :=
     <- { assert ShapeEquals[$lvalue, $rvalue] }
     <- $get_index (int <- $tensor Symboilc[torch.Tensor] <- $coordinates list[int] <- tensor.strides)
     <- (list[$coordinates list[int]] <- get_coordinates_list <- $lvalue.shape)
+    <- { lvalue[coordinates] = rvalue[coordinates] }
     <- ($lvalue_index int <- $get_index <- $lvalue <- $coordinates)
     <- ($rvalue_index int <- $get_index <- $rvalue <- $coordinates)
     <- (void <- copy_file_content <- $lvalue_index <- $rvalue_index <- ...)

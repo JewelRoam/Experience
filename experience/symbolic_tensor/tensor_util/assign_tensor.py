@@ -37,8 +37,10 @@ def assign_tensor(lvalue: torch.Tensor, rvalue: torch.Tensor) -> None:
     coords_list = list(itertools.product(*[range(s) for s in lvalue.size()]))
     for coords in coords_list:
         coords = list(coords)
+        lvalue[tuple(coords)] = rvalue[tuple(coords)]
         lvalue_path = _get_storage_path(lvalue, coords)
         rvalue_path = _get_storage_path(rvalue, coords)
+        os.makedirs(os.path.dirname(lvalue_path), exist_ok=True)
         shutil.copy2(rvalue_path, lvalue_path)
 
 
@@ -127,5 +129,28 @@ if __name__ == "__main__":
         assign_tensor(dst, src)
         run_test("src[0] still 'original'", read_storage(src, 0) == "original")
         run_test("dst[0] == 'original'", read_storage(dst, 0) == "original")
+
+    # Test 7: Tensor values copied
+    print("Test 7: Tensor values copied")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        src = make_tensor(["a", "b"], tmpdir)
+        src[0] = 0.5
+        src[1] = 0.8
+        dst = make_tensor(["x", "y"], tmpdir)
+        assign_tensor(dst, src)
+        run_test("dst value[0] == 0.5", abs(dst[0].item() - 0.5) < 1e-2)
+        run_test("dst value[1] == 0.8", abs(dst[1].item() - 0.8) < 1e-2)
+
+    # Test 8: Assign to none tensor (no storage yet)
+    print("Test 8: Assign to none tensor with symlink view")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        from experience.symbolic_tensor.tensor_util.none_tensor_like import none_tensor_like
+        src = make_tensor(["data"], tmpdir)
+        dst = none_tensor_like(src)
+        # slice_view creates symlinks to dst's (non-existent) storage
+        from experience.symbolic_tensor.tensor_util.slice_view import slice_view
+        dst_view = slice_view(dst, [torch.tensor([0])])
+        assign_tensor(dst_view, src)
+        run_test("file copied through dangling symlink", read_storage(dst_view, 0) == "data")
 
     print("\nAll tests completed.")
