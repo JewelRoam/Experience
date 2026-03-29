@@ -1,4 +1,4 @@
-NestedDataType := str | pathlib.Path
+NestedDataType := None | str | pathlib.Path
 
 make_tensor :=
     torch.Tensor
@@ -10,8 +10,8 @@ make_tensor :=
     <- { assert NestedDataConsistentWithShape[$nested_data, $shape] }
     <- $make_none_tensor Import[experience/symbolic_tensor/tensor_util/make_none_tensor]
     <- ($tensor <- $make_none_tensor <- ...)
-    <- ($flattened_data list[$file_content_or_path NestedDataType] <- $nested_data)
-    <- (list[$i int, $file_content_or_path] <- enumerate <- $flattened_data)
+    <- ($flattened_data list[$opt_file_content_or_path NestedDataType] <- $nested_data)
+    <- (list[$i int, $opt_file_content_or_path] <- enumerate <- $flattened_data)
     <- $get_index_dentries (list[$digit str] <- str_to_digit_list <- str <- $i)
     <- ($tensor_root_dir <- path_join <- $tensor.st_relative_to <- $tensor.st_tensor_uid)
     <- $get_file_path (
@@ -22,10 +22,13 @@ make_tensor :=
         <- (path_join <- $get_index_dentries <- $i)
         <- "data"
         )
-    <- (void 
-        <- save_to_file_system 
+    <- (void
+        <- {
+            save to file system if opt_file_content_or_path is not None.
+            create no path otherwise.
+        } 
         <- $path ($get_file_path <- ...) 
-        <- $file_content_or_path
+        <- $opt_file_content_or_path
         <- $symlink)
     <- (void 
         <- save_to_file_system 

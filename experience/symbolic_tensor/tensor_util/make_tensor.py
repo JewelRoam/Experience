@@ -7,13 +7,13 @@ from typing import List, Union
 from experience.symbolic_tensor.tensor_util.make_none_tensor import make_none_tensor
 
 
-NestedDataType = Union[str, Path]
+NestedDataType = Union[None, str, Path]
 NestedList = Union[NestedDataType, List["NestedList"]]
 
 
 def _is_leaf(item) -> bool:
-    """Check if item is a leaf node (str or Path, not a list)."""
-    return isinstance(item, (str, Path))
+    """Check if item is a leaf node (None, str, or Path, not a list)."""
+    return item is None or isinstance(item, (str, Path))
 
 
 def _get_shape(nested_data: NestedList) -> List[int]:
@@ -31,7 +31,7 @@ def _assert_consistent_shape(nested_data: NestedList, shape: List[int]) -> None:
     """Assert that all branches of nested_data match the derived shape."""
     if not shape:
         assert _is_leaf(nested_data), (
-            f"Expected str or Path at leaf, got {type(nested_data)}"
+            f"Expected None, str, or Path at leaf, got {type(nested_data)}"
         )
         return
     assert isinstance(nested_data, list), (
@@ -92,7 +92,9 @@ def make_tensor(nested_data: NestedList, relative_to: str, symlink: bool = False
     tensor_root_dir = os.path.join(tensor.st_relative_to, tensor.st_tensor_uid)
 
     # Save each element (string content or Path)
-    for i, file_content_or_path in enumerate(flattened_data):
+    for i, opt_file_content_or_path in enumerate(flattened_data):
+        if opt_file_content_or_path is None:
+            continue
         index_digits = _str_to_digit_list(str(i))
         file_path = os.path.join(
             tensor_root_dir,
@@ -101,18 +103,18 @@ def make_tensor(nested_data: NestedList, relative_to: str, symlink: bool = False
             "data",
         )
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        if isinstance(file_content_or_path, Path):
+        if isinstance(opt_file_content_or_path, Path):
             if symlink:
                 rel_src = os.path.relpath(
-                    str(file_content_or_path.resolve()),
+                    str(opt_file_content_or_path.resolve()),
                     os.path.dirname(file_path),
                 )
                 os.symlink(rel_src, file_path)
             else:
-                shutil.copy2(str(file_content_or_path), file_path)
+                shutil.copy2(str(opt_file_content_or_path), file_path)
         else:
             with open(file_path, "w", encoding="utf-8") as f:
-                f.write(file_content_or_path)
+                f.write(opt_file_content_or_path)
 
     # Save shape as JSON
     shape_path = os.path.join(tensor_root_dir, "shape")
