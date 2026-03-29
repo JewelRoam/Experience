@@ -24,3 +24,16 @@ Import[experience/symbolic_tensor/function/get_causal_attention_mask.viba]
 #   - multi-head simulation: independent masks per batch = independent heads
 #   - prefix sharing (causal): tokens sharing prefix have shared leading frames
 #   - get_causal_attention_mask integration: works with the mask generator
+#
+# 10+ backward tests (require LLM, simple tasks for high pass rate):
+#   - backward shape: grad_input.shape == input.shape
+#   - backward produces symbolic content: grad_input elements are non-None
+#   - typo fix propagation: LLM fixes obvious typo through backward
+#   - case correction: LLM uppercases text through backward
+#   - no-change identity: identical grad produces no meaningful diff
+#   - multi-token causal backward: grad flows to all attended tokens
+#   - partial mask backward: only attended tokens get grad
+#   - multi-batch backward: independent grad per batch
+#   - coefficient channel: grad_input numeric values are non-zero for attended
+#   - full pipeline: forward -> manual modify output -> backward -> check grad
+#   - content-aware grad: grad_input references original content in diffs

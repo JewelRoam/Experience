@@ -504,6 +504,387 @@ if __name__ == "__main__":
         run_test("t1 sees [b,d,f]", frame_texts(f1) == ["b", "d", "f"])
 
     # ================================================================
+    # BACKWARD TESTS (require LLM)
+    # ================================================================
+    import subprocess
+    from experience.symbolic_tensor.function.slice_attention import slice_attention
+    from experience.symbolic_tensor.function.slice_attention_forward import (
+        slice_attention_forward,
+    )
+    from experience.symbolic_tensor.function.slice_attention_backward import (
+        slice_attention_backward,
+    )
+    from experience.symbolic_tensor.function.merge_forward import merge_forward
+    from experience.symbolic_tensor.function.merge_backward import merge_backward
+    from experience.symbolic_tensor.tensor_util.get_diff_tensor import get_diff_tensor
+    from experience.symbolic_tensor.tensor_util.todo_tensor_like import todo_tensor_like
+
+    # Source anthropic env vars
+    result = subprocess.run(
+        ["bash", "-c", "source ~/.anthropic.sh && env"],
+        capture_output=True, text=True,
+    )
+    for line in result.stdout.splitlines():
+        if "=" in line:
+            key, _, val = line.partition("=")
+            os.environ[key] = val
+    os.environ.pop("CLAUDECODE", None)
+
+    print("\n--- Backward Tests (LLM) ---\n")
+
+    # ================================================================
+    # Test 24: Backward shape — grad_input.shape == input.shape
+    # Like traditional attention: grad has same shape as input
+    # ================================================================
+    print("Test 24: Backward shape preservation")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        inp = make_tensor([["hello\n", "world\n"]], tmpdir)
+        inp.requires_grad_(True)
+        mask = torch.ones(1, 2, 2, dtype=torch.bool)
+
+        # Forward through slice_attention
+        sliced = slice_attention_forward(inp, mask)
+        sliced.requires_grad_(True)
+        merged = merge_forward(sliced, axis=-1)
+
+        # Create modified output: "hello" -> "Hello" (capitalize)
+        out_0 = read_storage(merged, 0)
+        out_1 = read_storage(merged, 1)
+        modified = make_tensor([[out_0.replace("hello", "Hello"), out_1]], tmpdir)
+        grad_out = get_diff_tensor(merged, modified)
+
+        # Backward through merge
+        grad_sliced = merge_backward(grad_out, sliced, merged, axis=-1)
+
+        # Backward through slice_attention
+        grad_input = slice_attention_backward(
+            grad_sliced, inp, sliced, mask,
+            task_prompt="Capitalize the first letter of each word.",
+        )
+
+        run_test("grad_input shape == input shape",
+                 list(grad_input.shape) == list(inp.shape))
+        run_test("grad_input shape [1, 2]", list(grad_input.shape) == [1, 2])
+
+    # ================================================================
+    # Test 25: Backward produces symbolic content
+    # grad_input elements should be non-None (LLM wrote something)
+    # ================================================================
+    print("Test 25: Backward produces symbolic content")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        inp = make_tensor([["teh cat\n", "sat dwon\n"]], tmpdir)
+        inp.requires_grad_(True)
+        mask = torch.tril(torch.ones(1, 2, 2, dtype=torch.bool))
+
+        sliced = slice_attention_forward(inp, mask)
+        sliced.requires_grad_(True)
+        merged = merge_forward(sliced, axis=-1)
+
+        out_0 = read_storage(merged, 0)
+        out_1 = read_storage(merged, 1)
+        modified = make_tensor([[
+            out_0.replace("teh", "the"),
+            out_1.replace("teh", "the").replace("dwon", "down"),
+        ]], tmpdir)
+        grad_out = get_diff_tensor(merged, modified)
+        grad_sliced = merge_backward(grad_out, sliced, merged, axis=-1)
+        grad_input = slice_attention_backward(
+            grad_sliced, inp, sliced, mask,
+            task_prompt="Fix all spelling errors in the text.",
+        )
+
+        gi_0 = read_storage(grad_input, 0)
+        gi_1 = read_storage(grad_input, 1)
+        run_test("grad_input[0] not None", gi_0 is not None)
+        run_test("grad_input[1] not None", gi_1 is not None)
+        print(f"    gi[0]: {repr(gi_0[:80]) if gi_0 else 'None'}")
+        print(f"    gi[1]: {repr(gi_1[:80]) if gi_1 else 'None'}")
+
+    # ================================================================
+    # Test 26: Typo fix propagation through backward
+    # Input has typos, LLM should produce a better version
+    # ================================================================
+    print("Test 26: Typo fix propagation")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        inp = make_tensor([["Bonjor le mond\n"]], tmpdir)
+        inp.requires_grad_(True)
+        mask = torch.ones(1, 1, 1, dtype=torch.bool)
+
+        sliced = slice_attention_forward(inp, mask)
+        sliced.requires_grad_(True)
+        merged = merge_forward(sliced, axis=-1)
+
+        out_content = read_storage(merged, 0)
+        modified = make_tensor([[
+            out_content.replace("Bonjor", "Bonjour").replace("mond", "monde"),
+        ]], tmpdir)
+        grad_out = get_diff_tensor(merged, modified)
+        grad_sliced = merge_backward(grad_out, sliced, merged, axis=-1)
+        grad_input = slice_attention_backward(
+            grad_sliced, inp, sliced, mask,
+            task_prompt="Fix the French spelling errors: Bonjor->Bonjour, mond->monde.",
+        )
+
+        gi = read_storage(grad_input, 0)
+        run_test("grad produced", gi is not None)
+        has_bonjour = gi is not None and ("Bonjour" in gi or "bonjour" in gi.lower())
+        run_test("grad mentions Bonjour", has_bonjour)
+        print(f"    gi: {repr(gi[:100]) if gi else 'None'}")
+
+    # ================================================================
+    # Test 27: Capitalization task through backward
+    # ================================================================
+    print("Test 27: Capitalization improvement")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        inp = make_tensor([["apple\n", "banana\n"]], tmpdir)
+        inp.requires_grad_(True)
+        mask = torch.ones(1, 2, 2, dtype=torch.bool)
+
+        sliced = slice_attention_forward(inp, mask)
+        sliced.requires_grad_(True)
+        merged = merge_forward(sliced, axis=-1)
+
+        out_0 = read_storage(merged, 0)
+        out_1 = read_storage(merged, 1)
+        modified = make_tensor([[
+            out_0.replace("apple", "Apple").replace("banana", "Banana"),
+            out_1.replace("apple", "Apple").replace("banana", "Banana"),
+        ]], tmpdir)
+        grad_out = get_diff_tensor(merged, modified)
+        grad_sliced = merge_backward(grad_out, sliced, merged, axis=-1)
+        grad_input = slice_attention_backward(
+            grad_sliced, inp, sliced, mask,
+            task_prompt="Capitalize the first letter of each fruit name.",
+        )
+
+        run_test("grad_input shape [1, 2]", list(grad_input.shape) == [1, 2])
+        gi_0 = read_storage(grad_input, 0)
+        gi_1 = read_storage(grad_input, 1)
+        run_test("grad[0] not None", gi_0 is not None)
+        run_test("grad[1] not None", gi_1 is not None)
+        print(f"    gi[0]: {repr(gi_0[:80]) if gi_0 else 'None'}")
+        print(f"    gi[1]: {repr(gi_1[:80]) if gi_1 else 'None'}")
+
+    # ================================================================
+    # Test 28: No-change produces no meaningful diff
+    # When output is unchanged, grad diffs should be empty
+    # ================================================================
+    print("Test 28: No-change backward — empty grad diffs")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        inp = make_tensor([["perfect text\n"]], tmpdir)
+        inp.requires_grad_(True)
+        mask = torch.ones(1, 1, 1, dtype=torch.bool)
+
+        sliced = slice_attention_forward(inp, mask)
+        sliced.requires_grad_(True)
+        merged = merge_forward(sliced, axis=-1)
+
+        # grad_output = diff(output, output) = empty diffs
+        grad_out = get_diff_tensor(merged, merged)
+        grad_sliced = merge_backward(grad_out, sliced, merged, axis=-1)
+
+        # merge_backward produces empty diffs → slice_attention_backward gets
+        # TODO placeholders. The grad still exists but diffs are empty/trivial.
+        run_test("grad_sliced shape [1, 1, 1]", list(grad_sliced.shape) == [1, 1, 1])
+        gs_content = read_storage(grad_sliced, 0)
+        run_test("grad_sliced[0] has no real diff", gs_content is not None and "---" not in gs_content)
+
+    # ================================================================
+    # Test 29: Causal backward — grad flows to all attended tokens
+    # In causal mask, token 0 is attended by all → gets grad from all rows
+    # ================================================================
+    print("Test 29: Causal backward — multi-row grad aggregation")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        inp = make_tensor([["helo\n", "wrld\n"]], tmpdir)
+        inp.requires_grad_(True)
+        mask = torch.tril(torch.ones(1, 2, 2, dtype=torch.bool))
+
+        sliced = slice_attention_forward(inp, mask)
+        sliced.requires_grad_(True)
+        merged = merge_forward(sliced, axis=-1)
+
+        out_0 = read_storage(merged, 0)
+        out_1 = read_storage(merged, 1)
+        modified = make_tensor([[
+            out_0.replace("helo", "hello"),
+            out_1.replace("helo", "hello").replace("wrld", "world"),
+        ]], tmpdir)
+        grad_out = get_diff_tensor(merged, modified)
+        grad_sliced = merge_backward(grad_out, sliced, merged, axis=-1)
+        grad_input = slice_attention_backward(
+            grad_sliced, inp, sliced, mask,
+            task_prompt="Fix spelling: helo->hello, wrld->world.",
+        )
+
+        run_test("grad_input shape [1, 2]", list(grad_input.shape) == [1, 2])
+        # Token 0 ("helo") is attended by both rows → gets grad from 2 positions
+        gi_0 = read_storage(grad_input, 0)
+        run_test("token 0 gets grad", gi_0 is not None)
+        # Token 1 ("wrld") only attended by row 1
+        gi_1 = read_storage(grad_input, 1)
+        run_test("token 1 gets grad", gi_1 is not None)
+        print(f"    gi[0]: {repr(gi_0[:80]) if gi_0 else 'None'}")
+        print(f"    gi[1]: {repr(gi_1[:80]) if gi_1 else 'None'}")
+
+    # ================================================================
+    # Test 30: Partial mask backward — sparse attendance
+    # Token attended by fewer rows gets less gradient signal
+    # ================================================================
+    print("Test 30: Partial mask backward — sparse grad")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        inp = make_tensor([["alpha\n", "beta\n"]], tmpdir)
+        inp.requires_grad_(True)
+        # Token 0 self-attends; Token 1 attends to both
+        mask = torch.tensor([[[True, False], [True, True]]])
+
+        sliced = slice_attention_forward(inp, mask)
+        sliced.requires_grad_(True)
+        merged = merge_forward(sliced, axis=-1)
+
+        out_0 = read_storage(merged, 0)
+        out_1 = read_storage(merged, 1)
+        modified = make_tensor([[
+            out_0.replace("alpha", "Alpha") if out_0 else "",
+            out_1.replace("alpha", "Alpha").replace("beta", "Beta") if out_1 else "",
+        ]], tmpdir)
+        grad_out = get_diff_tensor(merged, modified)
+
+        grad_sliced = merge_backward(grad_out, sliced, merged, axis=-1)
+        grad_input = slice_attention_backward(
+            grad_sliced, inp, sliced, mask,
+            task_prompt="Capitalize the first letter.",
+        )
+
+        run_test("grad_input shape [1, 2]", list(grad_input.shape) == [1, 2])
+        gi_0 = read_storage(grad_input, 0)
+        gi_1 = read_storage(grad_input, 1)
+        run_test("token 0 gets grad", gi_0 is not None)
+        run_test("token 1 gets grad", gi_1 is not None)
+        # Token 1 only attended by row 1, token 0 attended by rows 0 and 1
+        # So numeric grad for token 0 should be >= token 1
+        run_test("token 0 numeric >= token 1 numeric",
+                 grad_input.data[0, 0].item() >= grad_input.data[0, 1].item() - 1e-5)
+
+    # ================================================================
+    # Test 31: Multi-batch backward
+    # Each batch gets independent gradient computation
+    # ================================================================
+    print("Test 31: Multi-batch backward independence")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        inp = make_tensor([["cat\n", "dog\n"], ["sun\n", "moon\n"]], tmpdir)
+        inp.requires_grad_(True)
+        # Both batches: full 2x2 attention (all tokens see all tokens)
+        mask = torch.ones(2, 2, 2, dtype=torch.bool)
+
+        sliced = slice_attention_forward(inp, mask)
+        sliced.requires_grad_(True)
+        merged = merge_forward(sliced, axis=-1)
+
+        # Modify: capitalize in both batches
+        out_b0_0 = read_storage(merged, 0) or ""
+        out_b0_1 = read_storage(merged, 1) or ""
+        out_b1_0 = read_storage(merged, 2) or ""
+        out_b1_1 = read_storage(merged, 3) or ""
+        modified = make_tensor([
+            [out_b0_0.replace("cat", "Cat"), out_b0_1.replace("cat", "Cat")],
+            [out_b1_0.replace("sun", "Sun"), out_b1_1.replace("sun", "Sun")],
+        ], tmpdir)
+        grad_out = get_diff_tensor(merged, modified)
+        grad_sliced = merge_backward(grad_out, sliced, merged, axis=-1)
+        grad_input = slice_attention_backward(
+            grad_sliced, inp, sliced, mask,
+            task_prompt="Capitalize the first letter of each animal/celestial word.",
+        )
+
+        run_test("grad_input shape [2, 2]", list(grad_input.shape) == [2, 2])
+        gi_b0_0 = read_storage(grad_input, 0)
+        gi_b1_0 = read_storage(grad_input, 2)
+        run_test("b0 t0 gets grad", gi_b0_0 is not None)
+        run_test("b1 t0 gets grad", gi_b1_0 is not None)
+        print(f"    gi[0,0]: {repr(gi_b0_0[:60]) if gi_b0_0 else 'None'}")
+        print(f"    gi[1,0]: {repr(gi_b1_0[:60]) if gi_b1_0 else 'None'}")
+
+    # ================================================================
+    # Test 32: Numeric coefficient channel in backward
+    # grad_input.data should have non-zero values for attended positions
+    # ================================================================
+    print("Test 32: Numeric coefficient channel")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        inp = make_tensor([["x\n", "y\n"]], tmpdir)
+        inp.requires_grad_(True)
+        mask = torch.tril(torch.ones(1, 2, 2, dtype=torch.bool))
+
+        sliced = slice_attention_forward(inp, mask)
+        # Set non-trivial grad_output coefficients
+        grad_out = todo_tensor_like(sliced)
+        grad_out.data[0, 0, 0] = 2.0
+        grad_out.data[0, 1, 0] = 4.0
+        grad_out.data[0, 1, 1] = 6.0
+
+        grad_input = slice_attention_backward(
+            grad_out, inp, sliced, mask,
+            task_prompt="Improve the text.",
+        )
+
+        # Numeric: mean over attending rows
+        # col 0: (2*1 + 4*1) / 2 = 3.0
+        # col 1: (0*0 + 6*1) / 2 = 3.0
+        run_test("numeric grad[0,0] = 3.0",
+                 abs(grad_input.data[0, 0].item() - 3.0) < 1e-5,
+                 3.0, grad_input.data[0, 0].item())
+        run_test("numeric grad[0,1] = 3.0",
+                 abs(grad_input.data[0, 1].item() - 3.0) < 1e-5,
+                 3.0, grad_input.data[0, 1].item())
+
+    # ================================================================
+    # Test 33: Full autograd pipeline — forward + backward via .backward()
+    # Traditional attention supports autograd; symbolic should too
+    # ================================================================
+    print("Test 33: Full autograd .backward() pipeline")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        inp = make_tensor([["good morning\n", "good night\n"]], tmpdir)
+        inp.requires_grad_(True)
+        mask = torch.ones(1, 2, 2, dtype=torch.bool)
+
+        output = st_attention(
+            inp, mask,
+            task_prompt="Improve greetings to be more formal.",
+        )
+
+        run_test("output shape (1, 2)", list(output.shape) == [1, 2])
+        run_test("output requires_grad", output.requires_grad)
+
+        # Create a scalar loss from coefficients
+        loss = output.sum()
+        loss.backward()
+
+        run_test("inp.grad exists", inp.grad is not None)
+        run_test("inp.grad shape [1, 2]", list(inp.grad.shape) == [1, 2])
+        print(f"    inp.grad.data: {inp.grad.data.tolist()}")
+
+    # ================================================================
+    # Test 34: requires_grad=False — no gradient computed
+    # ================================================================
+    print("Test 34: No grad when requires_grad=False")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        inp = make_tensor([["a\n"]], tmpdir)
+        # requires_grad is False by default
+        mask = torch.ones(1, 1, 1, dtype=torch.bool)
+
+        sliced = slice_attention_forward(inp, mask)
+        sliced.requires_grad_(True)  # needed for merge_backward
+        merged = merge_forward(sliced, axis=-1)
+
+        grad_out = get_diff_tensor(merged, merged)
+        grad_sliced = merge_backward(grad_out, sliced, merged, axis=-1)
+
+        # inp.requires_grad is False, so slice_attention_backward returns None
+        result = slice_attention_backward(
+            grad_sliced, inp, sliced, mask,
+        )
+        run_test("returns None for non-grad input", result is None)
+
+    # ================================================================
     # Summary
     # ================================================================
     total = passed + failed
