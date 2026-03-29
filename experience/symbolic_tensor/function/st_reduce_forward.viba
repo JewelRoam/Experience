@@ -13,4 +13,5 @@ st_reduce_forward :=
     <- $text_merger.pack
     <- {
         Merge axis of $input into a scalar tensor.
+        Skip elements whose coefficient is zero.
     }

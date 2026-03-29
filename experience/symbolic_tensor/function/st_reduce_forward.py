@@ -106,7 +106,7 @@ def st_reduce_forward(
             coefficient = input.data.flatten()[in_flat_index].item()
             content = _read_storage(input, in_flat_index)
 
-            if content is not None:
+            if content is not None and coefficient != 0.0:
                 frames.append((k, coefficient, content))
 
         # Pack and write
@@ -252,8 +252,22 @@ if __name__ == "__main__":
         result = st_reduce_forward(inp)
         run_test("shape [2]", list(result.shape) == [2])
 
-    # Test 9: Custom text_merger
-    print("Test 9: Custom text_merger")
+    # Test 9: Skip zero-coefficient elements
+    print("Test 9: Skip zero-coefficient elements")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        inp = make_tensor(["keep", "skip", "also_keep"], tmpdir)
+        # Set middle element coefficient to zero
+        inp.data[1] = 0.0
+        result = st_reduce_forward(inp, axis=0)
+        content = read_out(result, 0)
+        frames = TextMerger.unpack(content)
+        run_test("2 frames (skip zero coeff)", len(frames) == 2)
+        run_test("frame[0] = 'keep'", frames[0][2] == "keep")
+        run_test("frame[1] = 'also_keep'", frames[1][2] == "also_keep")
+        run_test("coeff sum = 2.0", abs(result.data.flatten()[0].item() - 2.0) < 1e-5)
+
+    # Test 10: Custom text_merger
+    print("Test 10: Custom text_merger")
 
     class SimpleMerger:
         @staticmethod
