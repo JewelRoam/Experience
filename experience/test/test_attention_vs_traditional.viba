@@ -1,0 +1,26 @@
+
+Import[experience/symbolic_tensor/function/st_attention.viba]
+Import[experience/symbolic_tensor/function/get_causal_attention_mask.viba]
+
+# in __main__ block:
+# 20+ tests confirming symbolic st_attention aligns with traditional transformer attention:
+#   - shape: output shape == input shape (residual-compatible)
+#   - causal mask: token i sees exactly tokens [0..i] (autoregressive)
+#   - full attention: every token sees all tokens (bidirectional encoder)
+#   - padding mask: padded tokens produce zero output, non-padded unaffected
+#   - sliding window: each token attends to local window only
+#   - diagonal (self-only): each token sees only itself
+#   - CLS-token pattern: first token attends to all, others attend to self
+#   - cross-attention pattern: query tokens attend to separate key tokens
+#   - no attention (all masked): entire output is zero
+#   - batch independence: different masks per batch produce independent results
+#   - frame ordering: attended tokens appear in positional order (like QK^T @ V)
+#   - coefficient semantics: output coeff = number of attended tokens (like attention weight sum)
+#   - single token: degenerate case, output = input
+#   - content preservation: merge(slice(input)) preserves original text content
+#   - monotonic information growth (causal): later tokens carry more info
+#   - attention sparsity: sparse mask = fewer frames in output
+#   - symmetric mask: symmetric attention = same frames for symmetric tokens
+#   - multi-head simulation: independent masks per batch = independent heads
+#   - prefix sharing (causal): tokens sharing prefix have shared leading frames
+#   - get_causal_attention_mask integration: works with the mask generator

@@ -1,3 +1,15 @@
 st_attention :=
-    Symbolic[torch.Tensor]
-    <- 
+    $output Symbolic[torch.Tensor]
+    <- $input Symbolic[torch.Tensor]
+    <- $attention_mask torch.Tensor[bool]
+    <- $return_view bool
+    <- $grad_input_prompt Optional[Callable]
+    <- $task_prompt str
+    <- $llm_method str
+    <- $llm_env Optional[Dict[str, str]]
+    <- $text_merger Optional[CompatibleTo[TextMerger]]
+    # inline
+    <- $slice_attention Import[experience/symbolic_tensor/function/slice_attention.viba]
+    <- $merge Import[experience/symbolic_tensor/function/merge.viba]
+    <- ($sliced Symbolic[torch.Tensor] <- $slice_attention <- $input <- $attention_mask <- $return_view <- $grad_input_prompt <- $task_prompt <- $llm_method <- $llm_env)
+    <- ($output <- $merge <- $sliced <- -1 <- $text_merger)
