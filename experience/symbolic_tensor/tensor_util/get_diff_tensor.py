@@ -73,7 +73,8 @@ def get_diff_tensor(lvalue: torch.Tensor, rvalue: torch.Tensor) -> torch.Tensor:
                  lv_norm, rv_norm],
                 capture_output=True, text=True,
             )
-            diffs.append(result.stdout)
+            diff_text = result.stdout
+            diffs.append(diff_text if diff_text else None)
         finally:
             if lv_norm != lvalue_path:
                 os.unlink(lv_norm)
@@ -127,6 +128,8 @@ if __name__ == "__main__":
             os.path.join(*digits),
             "data",
         )
+        if not os.path.isfile(path):
+            return None
         with open(path) as f:
             return f.read()
 
@@ -137,8 +140,8 @@ if __name__ == "__main__":
         b = make_tensor(["hello\n", "world\n"], tmpdir)
         diff = get_diff_tensor(a, b)
         run_test("shape matches", list(diff.shape) == [2])
-        run_test("diff[0] is empty", read_storage(diff, 0) == "")
-        run_test("diff[1] is empty", read_storage(diff, 1) == "")
+        run_test("diff[0] is None (no diff)", read_storage(diff, 0) is None)
+        run_test("diff[1] is None (no diff)", read_storage(diff, 1) is None)
 
     # Test 2: Different content produces unified diff
     print("Test 2: Different content -> unified diff")
@@ -151,7 +154,7 @@ if __name__ == "__main__":
         run_test("diff[0] contains +++", "+++" in d0)
         run_test("diff[0] contains -line2", "-line2" in d0)
         run_test("diff[0] contains +modified", "+modified" in d0)
-        run_test("diff[1] is empty (same content)", read_storage(diff, 1) == "")
+        run_test("diff[1] is None (same content)", read_storage(diff, 1) is None)
 
     # Test 3: 2D tensor diff
     print("Test 3: 2D tensor diff")
@@ -160,10 +163,10 @@ if __name__ == "__main__":
         b = make_tensor([["a\n", "B\n"], ["C\n", "d\n"]], tmpdir)
         diff = get_diff_tensor(a, b)
         run_test("shape matches", list(diff.shape) == [2, 2])
-        run_test("diff[0,0] empty (same)", read_storage(diff, 0) == "")
+        run_test("diff[0,0] None (same)", read_storage(diff, 0) is None)
         run_test("diff[0,1] has diff", "---" in read_storage(diff, 1))
         run_test("diff[1,0] has diff", "---" in read_storage(diff, 2))
-        run_test("diff[1,1] empty (same)", read_storage(diff, 3) == "")
+        run_test("diff[1,1] None (same)", read_storage(diff, 3) is None)
 
     # Test 4: Shape mismatch raises assertion
     print("Test 4: Shape mismatch assertion")

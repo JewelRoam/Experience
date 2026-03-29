@@ -41,7 +41,8 @@ def assign_tensor(lvalue: torch.Tensor, rvalue: torch.Tensor) -> None:
         lvalue_path = _get_storage_path(lvalue, coords)
         rvalue_path = _get_storage_path(rvalue, coords)
         os.makedirs(os.path.dirname(lvalue_path), exist_ok=True)
-        shutil.copy2(rvalue_path, lvalue_path)
+        if os.path.isfile(rvalue_path):
+            shutil.copy2(rvalue_path, lvalue_path)
 
 
 if __name__ == "__main__":
