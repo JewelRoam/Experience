@@ -1,0 +1,4 @@
+merge := torch.autograd.Function[
+    $forward Import[experience/symbolic_tensor/function/merge_forward.viba],
+    $backward Import[experience/symbolic_tensor/function/merge_backward.viba],
+]
