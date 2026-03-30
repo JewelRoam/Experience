@@ -131,6 +131,19 @@ default_prompt_for_grad_exp_value :=
 
 BackwardPromptCallable := $func ($ret str <- $task_prompt str <- $workspace_dir str <- $const_grad_output_view str <- $const_input_view str <- $const_output_view str <- $const_experience_view str <- $mutable_dir str)
 
+# Cold-start helper: always creates "TODO" strings regardless of file content.
+# Unlike todo_tensor_like which returns None for empty files (zeroing coefficients),
+# this ensures gradient entries are always populated.
+_force_todo_nested :=
+    $result (str | NestedList[str])
+    <- $size torch.Size
+    # inline
+    <- ($result
+        <- {
+            if len(size) == 0: return "TODO"
+            else: return [_force_todo_nested(size[1:]) for _ in range(size[0])]
+        })
+
 # Sum type: detect whether input element is plain text or merged frames
 # (from st_attention output via TextMerger.pack).
 # Plain: single content string — use current single-LLM-call logic.
@@ -390,10 +403,22 @@ st_moe_backward_grad_experience :=
         <- $slice_view
         <- $grad_experience
         <- $select_experience_indexes)
+    # Cold-start fix: use _force_todo_nested + make_tensor + assign_tensor
+    # instead of todo_tensor_like, which returns None for empty files and
+    # zeros out the coefficient.
+    <- ($todo_data NestedList[str]
+        <- _force_todo_nested
+        <- $grad_experience_sliced_view.size())
+    <- ($todo_tensor Symbolic[torch.Tensor]
+        <- Import[experience/symbolic_tensor/tensor_util/make_tensor.viba]
+        <- $todo_data
+        <- $grad_experience.st_relative_to)
     <- (void
-        <- $grad_experience_sliced_view.st_assign
-        <- Import[experience/symbolic_tensor/tensor_util/todo_tensor_like.viba]
-        <- $grad_experience_sliced_view)
+        <- Import[experience/symbolic_tensor/tensor_util/assign_tensor.viba]
+        <- $grad_experience_sliced_view
+        <- $todo_tensor)
+    # Restore coefficient to 1.0 (assign_tensor may have overwritten it)
+    <- ($grad_experience.data[select_experience_indexes] <- 1.0)
     <- ($grad_experience_sliced_value ExperienceTensor[Symbolic[torch.Tensor]]
         <- $slice_tensor
         <- $grad_experience

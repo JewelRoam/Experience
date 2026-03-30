@@ -149,7 +149,18 @@ def select_qkv_indexes(
     coordinates = [_extract_coordinates(p, qkv_data_view_dir) for p in selected_paths]
     ret = _unzip_to_tensor_list(coordinates)
     if len(ret) == 0:
-        return [torch.tensor([], dtype=torch.long)] * len(weight_tensor.shape)
+        # Cold-start: no query files passed the filter (all empty).
+        # Return random indexes so forward can still use (empty) experience entries
+        # and backward can populate them with useful content.
+        ndim = len(weight_tensor.shape)
+        result = []
+        for d in range(ndim):
+            if d == ndim - 1:
+                # Last dim is q/k/v; always select query (index 0)
+                result.append(torch.zeros(topk, dtype=torch.long))
+            else:
+                result.append(torch.randint(0, weight_tensor.size(d), (topk,)))
+        return result
     return ret
 
 

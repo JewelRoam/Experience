@@ -24,6 +24,13 @@ from experience.sparse_util.transpose_pairs_coordinates import (
 from experience.fs_util.text_merger import TextMerger, kFrameMarker
 
 
+def _force_todo_nested(size: torch.Size) -> Any:
+    """Create a nested list matching the given size, filled with 'TODO' strings."""
+    if len(size) == 0:
+        return "TODO"
+    return [_force_todo_nested(size[1:]) for _ in range(size[0])]
+
+
 def _scalar_slice_indices(shape: torch.Size) -> List[List[int]]:
     """Generate all coordinate tuples for iterating over each scalar element."""
     ranges = [range(s) for s in shape]
@@ -612,7 +619,13 @@ def st_moe_backward_grad_experience(
             experience_sliced_view = slice_view(experience, select_experience_indexes)
             grad_experience_sliced_view = slice_view(grad_experience, select_experience_indexes)
             # Assign TODO to the selected portion of grad_experience (unselected stays "")
-            assign_tensor(grad_experience_sliced_view, todo_tensor_like(grad_experience_sliced_view))
+            # Use _force_todo_nested instead of todo_tensor_like to handle cold-start:
+            # todo_tensor_like returns None for empty files, which zeros out the coefficient.
+            todo_data = _force_todo_nested(grad_experience_sliced_view.size())
+            todo_tensor = make_tensor(todo_data, grad_experience.st_relative_to)
+            assign_tensor(grad_experience_sliced_view, todo_tensor)
+            # Restore coefficient to 1.0 (assign_tensor may have overwritten it)
+            grad_experience.data[tuple(select_experience_indexes)] = 1.0
             grad_experience_sliced_value = slice_tensor(grad_experience, select_experience_indexes)
 
             workspace_dir = tempfile.mkdtemp()

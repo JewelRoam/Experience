@@ -1,11 +1,27 @@
 patch_tensor :=
-    void
+    $stats dict[str, int]
     <- $lvalue Symbolic[torch.Tensor]
     <- $rvalue Symbolic[torch.Tensor]
     # inline
     <- { assert ShapeEquals[$lvalue, $rvalue] }
-    <- $get_index (int <- $tensor Symbolic[torch.Tensor] <- $coordinates list[int] <- tensor.strides)
+    <- ($stats <- {"applied": 0, "rejected": 0, "fuzzed": 0, "skipped": 0, "rej_files": 0})
+    <- $get_storage_path (str <- $tensor Symbolic[torch.Tensor] <- $coordinates list[int] <- tensor.strides)
     <- (list[$coordinates list[int]] <- get_coordinates_list <- $lvalue.shape)
-    <- ($lvalue_index int <- $get_index <- $lvalue <- $coordinates)
-    <- ($rvalue_index int <- $get_index <- $rvalue <- $coordinates)
-    <- (void <- { patch --no-backup-if-mismatch --fuzz=3 -i patch-rvalue.txt target-lvalue.txt } <- $lvalue_index <- $rvalue_index <- ...)
+    <- ($lvalue_path str <- $get_storage_path <- $lvalue <- $coordinates)
+    <- ($rvalue_path str <- $get_storage_path <- $rvalue <- $coordinates)
+    <- ($patch_content str <- {
+        skip (stats["skipped"] += 1; continue) if rvalue_path not exists.
+        skip if patch_content.strip() is empty or "TODO".
+        read and return file content otherwise.
+    })
+    <- ($lvalue_content str <- { read lvalue_path })
+    <- (void <- {
+        cold-start: if lvalue_content.strip() is empty,
+            extract "+" lines from unified diff (skip "+++" header lines),
+            write joined content directly to lvalue_path.
+            stats["applied"] += 1 if new_lines, else stats["skipped"] += 1.
+            continue.
+        normal: ensure trailing newline on lvalue_content,
+            apply patch via `patch --no-backup-if-mismatch --fuzz=3 -i patch_file lvalue_path`,
+            update stats accordingly.
+    })

@@ -47,6 +47,9 @@ def patch_tensor(lvalue: torch.Tensor, rvalue: torch.Tensor) -> dict:
         rvalue_path = _get_storage_path(rvalue, coords)
 
         # Read the patch content; skip if empty or TODO
+        if not os.path.isfile(rvalue_path):
+            stats["skipped"] += 1
+            continue
         with open(rvalue_path) as f:
             patch_content = f.read()
         stripped = patch_content.strip()
@@ -54,9 +57,30 @@ def patch_tensor(lvalue: torch.Tensor, rvalue: torch.Tensor) -> dict:
             stats["skipped"] += 1
             continue
 
-        # Ensure target file ends with newline (patch requires it)
+        # Read current target content
         with open(lvalue_path, "r", encoding="utf-8") as f:
             lvalue_content = f.read()
+
+        # Cold-start: if the target file is empty, apply the patch content directly
+        # instead of trying to use `patch` (which handles empty→content diffs poorly).
+        # Extract the "+" lines from the unified diff as the new content.
+        if not lvalue_content.strip():
+            new_lines = []
+            for line in patch_content.splitlines():
+                if line.startswith("+") and not line.startswith("+++"):
+                    new_lines.append(line[1:])
+            if new_lines:
+                new_content = "\n".join(new_lines)
+                if not new_content.endswith("\n"):
+                    new_content += "\n"
+                with open(lvalue_path, "w", encoding="utf-8") as f:
+                    f.write(new_content)
+                stats["applied"] += 1
+            else:
+                stats["skipped"] += 1
+            continue
+
+        # Ensure target file ends with newline (patch requires it)
         if not lvalue_content.endswith("\n"):
             with open(lvalue_path, "w", encoding="utf-8") as f:
                 f.write(lvalue_content + "\n")

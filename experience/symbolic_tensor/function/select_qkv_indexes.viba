@@ -33,3 +33,14 @@ select_qkv_indexes :=
     <- ($slightly_random_similarity <- add <- $similarity <- $random_noise <- If[$random_noise])
     <- ($selected_query_file_path list[str] <- arg_top_k <- list[$query_file_path, $slightly_random_similarity] <- descend_by_similarity <- $topk)
     <- ($selected_qkv_indexes <- unzip_to_tensor_list <- extract_coordinates <- $selected_query_file_path)
+    # Cold-start fallback: when no query files pass filter (all empty),
+    # return random indexes so forward can still use experience entries
+    # and backward can populate them with useful content.
+    <- ($selected_qkv_indexes <- {
+        if len(selected_qkv_indexes) == 0:
+            ndim = len(weight_tensor.shape)
+            return [torch.zeros(topk, dtype=torch.long) if d == ndim - 1
+                    else torch.randint(0, weight_tensor.size(d), (topk,))
+                    for d in range(ndim)]
+        else: return selected_qkv_indexes
+    })
