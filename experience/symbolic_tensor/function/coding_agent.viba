@@ -1,0 +1,56 @@
+
+# Mini version of st_moe_forward: no autograd, no experience.
+# Pure coding agent: input symbolic tensor → prompt → LLM → output symbolic tensor.
+
+ForwardPromptCallable := $func ($ret str <- $task_prompt str <- $workspace_dir str <- $const_input_view str <- $mutable_output_dir str)
+
+default_prompt_for_output :=
+    $prompt str
+    <- $task_prompt str
+    <- $workspace_dir str
+    <- $const_input_view str
+    <- $mutable_output_dir str
+    <- ($prompt <- '''
+        You are a coding agent.
+
+        f"{task_prompt}"
+
+        Input: f"{const_input_view}"
+        Output: f"{mutable_output_dir}"
+
+        Replace TODO in f"{mutable_output_dir}" with result.
+    ''')
+
+coding_agent :=
+    $output Symbolic[torch.Tensor]
+    <- $input Symbolic[torch.Tensor]
+    <- $output_prompt ForwardPromptCallable # default None
+    <- $task_prompt str # default ""
+    <- $llm_method ("coding_agent" | "raw_llm_api") # default raw_llm_api
+    <- $llm_env dict[str, str] # default None
+    # inline
+    <- ($output Symbolic[torch.Tensor]
+        <- Import[experience/symbolic_tensor/tensor_util/todo_tensor_like.viba]
+        <- $input)
+    <- $slice_view Import[experience/symbolic_tensor/tensor_util/slice_view.viba]
+    <- $slice_tensor Import[experience/symbolic_tensor/tensor_util/slice_tensor.viba]
+    <- $dump_view Import[experience/symbolic_tensor/tensor_util/dump_view.viba]
+    <- (NestedList[$scalar_output_view Symbolic[torch.Tensor]] <- NestedList[$slice_view] <- $output)
+    <- (NestedList[$scalar_output_value Symbolic[torch.Tensor]] <- NestedList[$slice_tensor] <- $output)
+    <- (NestedList[$scalar_input_view Symbolic[torch.Tensor]] <- NestedList[$slice_view] <- $input)
+    <- ($workspace_dir str <- TemporaryDirectory)
+    <- (void <- $dump_view <- $scalar_input_view <- f"{workspace_dir}/const_input_view")
+    <- (void <- $dump_view <- $scalar_output_value <- f"{workspace_dir}/mutable_output_dir")
+    <- ($prompt str <- ($output_prompt | default_prompt_for_output)
+        <- $task_prompt
+        <- $workspace_dir
+        <- f"{workspace_dir}/const_input_view"
+        <- f"{workspace_dir}/mutable_output_dir")
+    <- ($agent_task AgentTask <- $workspace_dir <- "mutable_output_dir" <- $prompt)
+    <- ($all_tasks list[AgentTask] <- NestedList[$agent_task])
+    <- (void <- Import[experience/llm_client/task_handler.viba] <- $all_tasks <- $llm_method <- $llm_env)
+    <- (void <- copy_back_to_storage_view <- f"{workspace_dir}/mutable_output_dir" <- $scalar_output_view)
+
+AgentTask := Import[experience/llm_client/agent_task.viba]
+
+# test both coding_agent and raw_llm_api

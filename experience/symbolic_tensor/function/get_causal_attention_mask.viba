@@ -1,6 +1,7 @@
 get_causal_attention_mask :=
     torch.Tensor[($batch_size, $seq_len, $seq_len), $dtype bool]
     <- $token_mask torch.Tensor[($batch_size, $seq_len), $dtype bool]
+    # inline
     <- ($tril <- { batched torch.tril } <- ($batch_size, $seq_len))
     <- ($expanded_token_mask
         <- { expand last dim to seq_len }
