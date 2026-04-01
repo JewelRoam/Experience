@@ -75,7 +75,7 @@ class _StSlicer:
 
 @property
 def _st_view_slicer(self):
-    from experience.symbolic_tensor.tensor_util.slice_view import slice_view
+    from experience.symbolic_tensor.function.slice_view import slice_view
     return _StSlicer(self, slice_view)
 
 torch.Tensor.st_view_slicer = _st_view_slicer
@@ -83,7 +83,7 @@ torch.Tensor.st_view_slicer = _st_view_slicer
 
 @property
 def _st_value_slicer(self):
-    from experience.symbolic_tensor.tensor_util.slice_tensor import slice_tensor
+    from experience.symbolic_tensor.function.slice_tensor import slice_tensor
     return _StSlicer(self, slice_tensor)
 
 torch.Tensor.st_value_slicer = _st_value_slicer
