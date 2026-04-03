@@ -5,7 +5,7 @@ import sys
 
 # Source anthropic env vars
 result = subprocess.run(
-    ["bash", "-c", "source ~/.anthropic.sh && env"],
+    ["bash", "-c", "source ~/.LLM_config.sh && env"],
     capture_output=True, text=True,
 )
 for line in result.stdout.splitlines():
