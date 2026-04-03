@@ -1,14 +1,21 @@
-"""Auto-encoder cloze experiment following claude.viba.
+"""Auto-encoder cloze experiment generated from claude.viba.
 
-Pipeline:
-  PrepareDataSet -> BaselineCodingAgentModel -> get_edit_distance_ratio
+Viba DSL specification:
+  kMaskedHint := "<AUTOENCODER-CLOZE-MASK-PLACEHOLDER>"
 
-BaselineCodingAgentModel[nn.Module]:
-  1. Stack path + content → (batch, num_files, 2)
-  2. merge(axis=-1) → (batch, num_files) — path+content merged per file
-  3. st_attention with prefix→last mask → (batch, num_files) — last col has all context
-  4. slice_tensor last col → (batch,)
-  5. coding_agent → (batch,) output
+  task_description := void <- $total_batch_size int <- $workspace_dir (str | None)
+    <- PrepareDataSet -> BaselineCodingAgentModel -> get_edit_distance
+    <- { print $baseline_output.st_uid ground_truth_content_tensor.st_uid }
+
+  BaselineCodingAgentModel[torch.nn.Module] :=
+    $baseline_output SymbolicTensor[($total_batch_size,)]
+    <- $masked_file_path_tensor SymbolicTensor[($total_batch_size, $num_files)]
+    <- $masked_file_content_tensor SymbolicTensor[($total_batch_size, $num_files)]
+    <- $ground_truth_content_tensor SymbolicTensor[($total_batch_size,)]
+
+  PrepareDataSet :=
+    ($masked_file_path_tensor, $masked_file_content_tensor, $ground_truth_content_tensor)
+    <- $total_batch_size int <- $dataset_dir
 """
 
 import os
@@ -16,7 +23,7 @@ import random
 import tempfile
 import torch
 import torch.nn as nn
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from experience.symbolic_tensor.tensor_util.make_tensor import make_tensor
 from experience.symbolic_tensor.tensor_util.slice_tensor import slice_tensor
@@ -27,6 +34,10 @@ from experience.symbolic_tensor.function.coding_agent import coding_agent
 from experience.symbolic_tensor.function.get_edit_distance_ratio import get_edit_distance_ratio_impl
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Constants
+# ═══════════════════════════════════════════════════════════════════════════════
+
 kMaskedHint = "<AUTOENCODER-CLOZE-MASK-PLACEHOLDER>"
 
 EXPERIENCE_ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "experience")
@@ -36,6 +47,7 @@ _MAX_CONTEXT_LINES = 15
 
 
 def _read_storage(tensor: torch.Tensor, flat_index: int) -> str:
+    """Read the content of a symbolic tensor element from disk."""
     digits = list(str(flat_index))
     path = os.path.join(
         tensor.st_relative_to, tensor.st_tensor_uid,
@@ -45,7 +57,9 @@ def _read_storage(tensor: torch.Tensor, flat_index: int) -> str:
         return f.read()
 
 
-# ── PrepareDataSet ──
+# ═══════════════════════════════════════════════════════════════════════════════
+# PrepareDataSet
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def _fetch_all_files(root_dir: str) -> List[Tuple[str, str]]:
     """Fetch all .py files as (relative_path, content)."""
@@ -99,6 +113,7 @@ def _get_random_mask_range(content: str, min_size: int = 20) -> Tuple[int, int, 
 
 
 def _apply_mask(content: str, start: int, end: int) -> str:
+    """Replace lines [start, end) with kMaskedHint."""
     lines = content.splitlines(keepends=True)
     return "".join(lines[:start] + [kMaskedHint + "\n"] + lines[end:])
 
@@ -124,12 +139,14 @@ def prepare_dataset(
         ground_truth_tensor:        Symbolic[Tensor(batch,)]
         file_info: list of "file_path:start-end" for logging
     """
+    # <- ($files list[($file_path str, $file_content)] <- { fetch all files in experience/ })
     files = _fetch_all_files(dataset_dir)
     files = [(fp, fc) for fp, fc in files
              if _find_maskable_range(fc)[1] - _find_maskable_range(fc)[0] >= 20]
     num_files = len(files)
     assert num_files > 0, f"No sufficiently large .py files in {dataset_dir}"
 
+    # <- {num_files = len(files)}
     file_paths = [fp for fp, _ in files]
     file_contents = [fc for _, fc in files]
 
@@ -138,6 +155,8 @@ def prepare_dataset(
     all_ground_truths = []
     file_info = []
 
+    # <- (list[($random_file_index int, $random_range_line_start int, $random_range_line_end int)]
+    #       <- { get multiple random ranges ... } <- $total_batch_size <- $num_files)
     for _ in range(total_batch_size):
         file_idx = random.randint(0, num_files - 1)
         fp, fc = files[file_idx]
@@ -159,6 +178,7 @@ def prepare_dataset(
         all_ground_truths.append(ground_truth)
         file_info.append(f"{fp}:{start+1}-{end}")
 
+    # Create symbolic tensors
     masked_path_tensor = make_tensor(all_masked_paths, tmpdir)
     masked_content_tensor = make_tensor(all_masked_contents, tmpdir)
     gt_tensor = make_tensor(all_ground_truths, tmpdir)
@@ -166,10 +186,12 @@ def prepare_dataset(
     return masked_path_tensor, masked_content_tensor, gt_tensor, file_info
 
 
-# ── BaselineCodingAgentModel ──
+# ═══════════════════════════════════════════════════════════════════════════════
+# BaselineCodingAgentModel[torch.nn.Module]
+# ═══════════════════════════════════════════════════════════════════════════════
 
 class BaselineCodingAgentModel(nn.Module):
-    """Baseline model from claude.viba.
+    """BaselineCodingAgentModel from claude.viba.
 
     Pipeline:
       1. Stack (path, content) → (batch, num_files, 2)
@@ -188,10 +210,12 @@ class BaselineCodingAgentModel(nn.Module):
         masked_path_tensor: torch.Tensor,
         masked_content_tensor: torch.Tensor,
     ) -> torch.Tensor:
+        """Forward pass implementing the viba pipeline."""
         batch_size, num_files = masked_path_tensor.shape
         tmpdir = masked_path_tensor.st_relative_to
 
         # Step 1: st_stack(path, content, dim=-1) → (batch, num_files, 2)
+        # $path_and_contents <- Import[function/merge] <- { concat on last axis }
         stacked_tensor = st_stack_forward(
             [masked_path_tensor, masked_content_tensor], dim=-1,
         )
@@ -203,7 +227,8 @@ class BaselineCodingAgentModel(nn.Module):
         # shape: (batch, num_files)
 
         # Step 3: st_attention with prefix→last mask
-        # Last position attends to all → gathers full context
+        # $merged_path_and_contents <- { fetch last column }
+        #   <- Import[function/st_attention] <- { prepare special attention mask to concat prefixes to last column }
         attention_mask = torch.eye(num_files, dtype=torch.bool).unsqueeze(0).expand(batch_size, -1, -1).clone()
         attention_mask[:, num_files - 1, :] = True
         merged = st_attention(path_and_contents, attention_mask, return_view=True)
@@ -214,6 +239,7 @@ class BaselineCodingAgentModel(nn.Module):
         merged_context = slice_tensor(merged, last_col_idx)
 
         # Step 5: coding_agent
+        # $prompt <- { autoencoder prompt for baseline model }
         task_prompt = (
             "You are an auto-encoder for source code.\n"
             f"The input contains Python files from a repository packed with frame markers.\n"
@@ -222,6 +248,8 @@ class BaselineCodingAgentModel(nn.Module):
             "Output ONLY the missing source code lines. No explanations."
         )
 
+        # $baseline_output <- Import[function/coding_agent.viba]
+        #   <- $merged_path_and_contents <- $prompt <- $llm_method "raw_llm_api"
         output = coding_agent(
             merged_context,
             task_prompt=task_prompt,
@@ -230,13 +258,36 @@ class BaselineCodingAgentModel(nn.Module):
         return output
 
 
-# ── Main ──
+# ═══════════════════════════════════════════════════════════════════════════════
+# task_description (main experiment entry point)
+# ═══════════════════════════════════════════════════════════════════════════════
 
-def run_experiment(total_batch_size: int = 16, llm_method: str = "raw_llm_api"):
+def run_experiment(
+    total_batch_size: int = 16,
+    workspace_dir: Optional[str] = None,
+    llm_method: str = "raw_llm_api",
+) -> float:
+    """task_description from claude.viba.
+
+    Args:
+        total_batch_size: default 16
+        workspace_dir: None means temp directory
+        llm_method: LLM backend to use
+
+    Returns:
+        Mean edit distance ratio (lower is better)
+    """
     root_dir = os.path.realpath(EXPERIENCE_ROOT)
     print(f"Dataset: {root_dir}")
 
-    tmpdir = tempfile.mkdtemp()
+    # <- $workspace_dir (str | None) # None means temp directory
+    if workspace_dir is None:
+        tmpdir = tempfile.mkdtemp()
+    else:
+        tmpdir = workspace_dir
+        os.makedirs(tmpdir, exist_ok=True)
+
+    # <- PrepareDataSet
     masked_path_tensor, masked_content_tensor, gt_tensor, file_info = prepare_dataset(
         total_batch_size, root_dir, tmpdir,
     )
@@ -245,11 +296,18 @@ def run_experiment(total_batch_size: int = 16, llm_method: str = "raw_llm_api"):
         gt_preview = _read_storage(gt_tensor, i)[:60].replace("\n", "\\n")
         print(f"  [{i}] {info} -> {gt_preview}...")
 
+    # <- BaselineCodingAgentModel
     print(f"\nRunning BaselineCodingAgentModel (llm_method={llm_method})...")
     model = BaselineCodingAgentModel(llm_method=llm_method)
     output = model(masked_path_tensor, masked_content_tensor)
 
+    # <- ($baseline_loss <- Import[function/get_edit_distance] <- $baseline_output <- $ground_truth_content_tensor)
     loss = get_edit_distance_ratio_impl(output, gt_tensor)
+
+    # <- { print $baseline_output.st_uid ground_truth_content_tensor.st_uid }
+    print(f"\noutput tensor uid: {output.st_tensor_uid}")
+    print(f"ground_truth tensor uid: {gt_tensor.st_tensor_uid}")
+
     print(f"\n{'='*50}")
     print(f"Results (edit_distance_ratio, lower=better):")
     print(f"{'='*50}")
@@ -266,9 +324,14 @@ def run_experiment(total_batch_size: int = 16, llm_method: str = "raw_llm_api"):
     return mean_loss
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# __main__ test block
+# ═══════════════════════════════════════════════════════════════════════════════
+
 if __name__ == "__main__":
     import subprocess
 
+    # Setup environment for LLM API
     result = subprocess.run(
         ["bash", "-c", "source ~/.anthropic.sh && env"],
         capture_output=True, text=True,
@@ -279,4 +342,5 @@ if __name__ == "__main__":
             os.environ[key] = val
     os.environ.pop("CLAUDECODE", None)
 
+    # Run the experiment
     run_experiment(total_batch_size=16, llm_method="raw_llm_api")

@@ -5,6 +5,7 @@ kMaskedHint := "<AUTOENCODER-CLOZE-MASK-PLACEHOLDER>"
 task_description :=
     void
     <- $total_batch_size int # default 16
+    <- $workspace_dir (str | None) # None means temp directory
     #inline
     <- { change to a git worktree of current Experience repo }
     <- { In most cases, operators on Symbolic[Tensor] should be symblic}
@@ -16,6 +17,7 @@ task_description :=
         <- Import[function/get_edit_distance]
         <- $baseline_output
         <- $ground_truth_content_tensor)
+    <- { print $baseline_output.st_uid ground_truth_content_tensor.st_uid }
 
 BaselineCodingAgentModel[torch.nn.Module] :=
     $baseline_output SymblicTensor[($total_batch_size,)]
@@ -70,7 +72,7 @@ PrepareDataSet :=
         <- {
             get multiple random ranges
             skip comments lines and code in __main__ block
-            the range size should be >= 20
+            the range size should be in range (20, 30)
         }
         <- $total_batch_size
         <- $num_files)
