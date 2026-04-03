@@ -117,8 +117,8 @@ def make_tensor(nested_data: NestedList, relative_to: str, symlink: bool = False
             src_path = str(opt_file_content_or_path)
             if symlink:
                 rel_src = os.path.relpath(
-                    str(opt_file_content_or_path.resolve()),
-                    os.path.dirname(file_path),
+                    os.path.realpath(str(opt_file_content_or_path)),
+                    os.path.realpath(os.path.dirname(file_path)),
                 )
                 os.symlink(rel_src, file_path)
             else:
